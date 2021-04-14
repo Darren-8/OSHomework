@@ -50,6 +50,7 @@ list_init(list_entry_t *elm) {
  * Insert the new element @elm *after* the element @listelm which
  * is already in the list.
  * */
+// 将某个节点插入到某个节点的后面，并不是插入到链表的尾部
 static inline void
 list_add(list_entry_t *listelm, list_entry_t *elm) {
     list_add_after(listelm, elm);
@@ -63,6 +64,7 @@ list_add(list_entry_t *listelm, list_entry_t *elm) {
  * Insert the new element @elm *before* the element @listelm which
  * is already in the list.
  * */
+// 此函数是将某个节点插入到某个节点的前面，并不是插入到链表的表头
 static inline void
 list_add_before(list_entry_t *listelm, list_entry_t *elm) {
     __list_add(elm, listelm->prev, listelm);

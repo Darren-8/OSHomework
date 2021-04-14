@@ -186,47 +186,59 @@ nr_free_pages(void) {
 }
 
 /* pmm_init - initialize the physical memory management */
+// 内存块块头初始化
 static void
 page_init(void) {
+    // 首先获得利用BIOS的15h中断获得的内存信息，具体可见bootasm.S
     struct e820map *memmap = (struct e820map *)(0x8000 + KERNBASE);
     uint64_t maxpa = 0;
 
+    // 输出内存块的信息
     cprintf("e820map:\n");
     int i;
     for (i = 0; i < memmap->nr_map; i ++) {
         uint64_t begin = memmap->map[i].addr, end = begin + memmap->map[i].size;
         cprintf("  memory: %08llx, [%08llx, %08llx], type = %d.\n",
                 memmap->map[i].size, begin, end - 1, memmap->map[i].type);
+        // 获得允许被操作系统使用的块的最高地址位置
         if (memmap->map[i].type == E820_ARM) {
             if (maxpa < end && begin < KMEMSIZE) {
                 maxpa = end;
             }
         }
     }
+    // 边界检查
     if (maxpa > KMEMSIZE) {
         maxpa = KMEMSIZE;
     }
 
     extern char end[];
 
+    // 对内存进行分块，获得分得的块的数量，即计算出需要管理的块的数量
     npage = maxpa / PGSIZE;
+    // 获得ucore的加载结束地址所在块的下一个块
     pages = (struct Page *)ROUNDUP((void *)end, PGSIZE);
 
+    // 这些块标记占用，也就是在标记被检测到的操作系统可以操作的块，方便后期块管理初始化程序的运行
     for (i = 0; i < npage; i ++) {
         SetPageReserved(pages + i);
     }
 
+    // 此处没看懂为啥要加 sizeof(struct Page) * npage 问题保留，初步推测和lab2中其他练习2和练习3有关
     uintptr_t freemem = PADDR((uintptr_t)pages + sizeof(struct Page) * npage);
 
     for (i = 0; i < memmap->nr_map; i ++) {
         uint64_t begin = memmap->map[i].addr, end = begin + memmap->map[i].size;
+        // 如果此内存部分允许操作系统管理则执行下列程序
         if (memmap->map[i].type == E820_ARM) {
+            // 边界检查，防止溢出
             if (begin < freemem) {
                 begin = freemem;
             }
             if (end > KMEMSIZE) {
                 end = KMEMSIZE;
             }
+            // 对此区域的内存初始化一个块头并加入的空闲内存管理链表中
             if (begin < end) {
                 begin = ROUNDUP(begin, PGSIZE);
                 end = ROUNDDOWN(end, PGSIZE);
@@ -282,6 +294,7 @@ boot_alloc_page(void) {
 
 //pmm_init - setup a pmm to manage physical memory, build PDT&PT to setup paging mechanism 
 //         - check the correctness of pmm & paging mechanism, print PDT&PT
+// 进行内存管理初始化
 void
 pmm_init(void) {
     //We need to alloc/free the physical memory (granularity is 4KB or other size). 
@@ -289,13 +302,16 @@ pmm_init(void) {
     //First we should init a physical memory manager(pmm) based on the framework.
     //Then pmm can alloc/free the physical memory. 
     //Now the first_fit/best_fit/worst_fit/buddy_system pmm are available.
+    // 初始化用于空闲内存管理的链表
     init_pmm_manager();
 
     // detect physical memory space, reserve already used memory,
     // then use pmm->init_memmap to create free page list
+    // 对内存中每个块的块头部分进行初始化
     page_init();
 
     //use pmm->check to verify the correctness of the alloc/free function in a pmm
+    // 执行检查程序，也就是先申请一部分内存，然后再还回去
     check_alloc_page();
 
     // create boot_pgdir, an initial page directory(Page Directory Table, PDT)

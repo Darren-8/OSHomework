@@ -3,6 +3,11 @@
 #include <string.h>
 #include <default_pmm.h>
 
+
+// 写在最前面
+// 通过阅读代码可知，每个内存块的块头都有一个Page结构体用来保存这个块的具体信息，同时每个Page结构体通过其成员page_link进行连接，
+// 每次通过page_link找到这个块时，向前读取数据即可获得此page_link下的Page中的数据。
+
 /* In the first fit algorithm, the allocator keeps a list of free blocks (known as the free list) and,
    on receiving a request for memory, scans along the list for the first block that is large enough to
    satisfy the request. If the chosen block is significantly larger than that requested, then it is 
@@ -61,6 +66,7 @@ free_area_t free_area;
 
 static void
 default_init(void) {
+    // 初始化链表，将头结点前后指针连成自己
     list_init(&free_list);
     nr_free = 0;
 }
@@ -68,18 +74,25 @@ default_init(void) {
 static void
 default_init_memmap(struct Page *base, size_t n) {
     assert(n > 0);
+    // 设置每个page的数据，将引用计数、标记位和块连续数量设置成零
     struct Page *p = base;
     for (; p != base + n; p ++) {
+        // 检查该内存块是否是被pmm.c中标记的内存块
         assert(PageReserved(p));
+        // 清空在pmm.c中设置的占用标志位，标识此内存块是空闲的
         p->flags = p->property = 0;
         set_page_ref(p, 0);
     }
+    // 将page块连续数量设置成n
     base->property = n;
     SetPageProperty(base);
+    // 总空闲块数量加n
     nr_free += n;
+    // 将空闲块加入list的尾部，注意查看这里list_add_before的具体内容
     list_add_before(&free_list, &(base->page_link));
 }
 
+// 根据块的地址大小，找到每个块插入链表的位置，此函数返回的是插入位置的后一个链表节点
 list_entry_t * getPosition(struct Page * pa) 
 {
     list_entry_t * le = &free_list;
@@ -88,21 +101,28 @@ list_entry_t * getPosition(struct Page * pa)
     return le;
 }
 
+// 用于分配内存
 static struct Page *
 default_alloc_pages(size_t n) {
     assert(n > 0);
+    // 查看是否有足够的内存用于分配
     if (n > nr_free) {
         return NULL;
     }
     struct Page *page = NULL;
     list_entry_t *le = &free_list;
+
+    // 寻找足够大的内存区域
     while ((le = list_next(le)) != &free_list) {
+        // 通过page_link来获得Page
         struct Page *p = le2page(le, page_link);
         if (p->property >= n) {
             page = p;
             break;
         }
     }
+
+    // 将此内存区域进行拆分分配，多余的部分重新插入链表中
     if (page != NULL) {
         list_del(&(page->page_link));
         if (page->property > n) {
@@ -117,10 +137,13 @@ default_alloc_pages(size_t n) {
     return page;
 }
 
+// 用于释放内存
 static void
 default_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
     struct Page *p = base;
+
+    // 将此内存块释放，并设置相应标志位
     for (; p != base + n; p ++) {
         assert(!PageReserved(p) && !PageProperty(p));
         p->flags = 0;
@@ -128,8 +151,11 @@ default_free_pages(struct Page *base, size_t n) {
     }
     base->property = n;
     SetPageProperty(base);
+
+    // 在链表中查找此内存块相连的空闲内存块，并将其进行合并
     list_entry_t *le = list_next(&free_list);
     while (le != &free_list) {
+        // 通过page_link来获得Page
         p = le2page(le, page_link);
         le = list_next(le);
         if (base + base->property == p) {
@@ -145,6 +171,7 @@ default_free_pages(struct Page *base, size_t n) {
         }
     }
     nr_free += n;
+    // 将最终处理好的内存块插入链表中
     __list_add(&(base -> page_link), getPosition(p) -> prev, getPosition(p));
     //list_add(&free_list, &(base->page_link));
 }
@@ -154,6 +181,7 @@ default_nr_free_pages(void) {
     return nr_free;
 }
 
+// 以下为程序测试方法，具体是先请求分配了一些内存块，然后又将这些内存块进行释放
 static void
 basic_check(void) {
     struct Page *p0, *p1, *p2;
@@ -270,6 +298,8 @@ default_check(void) {
     assert(total == 0);
 }
 
+
+// 这里是将pmm_manager中的成员函数和default_pmm.c中的函数进行对应连接
 const struct pmm_manager default_pmm_manager = {
     .name = "default_pmm_manager",
     .init = default_init,
