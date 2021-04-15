@@ -270,6 +270,7 @@ enable_paging(void) {
 //  perm: permission of this memory  
 static void
 boot_map_segment(pde_t *pgdir, uintptr_t la, size_t size, uintptr_t pa, uint32_t perm) {
+    // 检查是否对齐
     assert(PGOFF(la) == PGOFF(pa));
     size_t n = ROUNDUP(size + PGOFF(la), PGSIZE) / PGSIZE;
     la = ROUNDDOWN(la, PGSIZE);
@@ -316,27 +317,32 @@ pmm_init(void) {
     check_alloc_page();
 
     // create boot_pgdir, an initial page directory(Page Directory Table, PDT)
+    // 申请一个内存块用于存放二级页表
     boot_pgdir = boot_alloc_page();
     memset(boot_pgdir, 0, PGSIZE);
     boot_cr3 = PADDR(boot_pgdir);
 
+    // 检查我们的代码
     check_pgdir();
 
     static_assert(KERNBASE % PTSIZE == 0 && KERNTOP % PTSIZE == 0);
 
     // recursively insert boot_pgdir in itself
     // to form a virtual page table at virtual address VPT
+    // PDX用于取前10位，此处是将二级页表本身作为一个一级页表当成自己的页表项
     boot_pgdir[PDX(VPT)] = PADDR(boot_pgdir) | PTE_P | PTE_W;
 
     // map all physical memory to linear memory with base linear addr KERNBASE
     //linear_addr KERNBASE~KERNBASE+KMEMSIZE = phy_addr 0~KMEMSIZE
     //But shouldn't use this map until enable_paging() & gdt_init() finished.
+    // 将所有内存块放入页表，同时设置用户不可用防止内存读写
     boot_map_segment(boot_pgdir, KERNBASE, KMEMSIZE, 0, PTE_W);
 
     //temporary map: 
     //virtual_addr 3G~3G+4M = linear_addr 0~4M = linear_addr 3G~3G+4M = phy_addr 0~4M     
     boot_pgdir[0] = boot_pgdir[PDX(KERNBASE)];
 
+    // 设置内存读写
     enable_paging();
 
     //reload gdt(third time,the last time) to map all physical memory
@@ -533,22 +539,27 @@ check_alloc_page(void) {
 
 static void
 check_pgdir(void) {
+    // 检查合法性
     assert(npage <= KMEMSIZE / PGSIZE);
     assert(boot_pgdir != NULL && (uint32_t)PGOFF(boot_pgdir) == 0);
     assert(get_page(boot_pgdir, 0x0, NULL) == NULL);
 
     struct Page *p1, *p2;
+    // 插入p1到此二级页表的第一个页表项
     p1 = alloc_page();
     assert(page_insert(boot_pgdir, p1, 0x0, 0) == 0);
 
     pte_t *ptep;
+    // 检查正常查询情况下函数的返回结果是否正确
     assert((ptep = get_pte(boot_pgdir, 0x0, 0)) != NULL);
     assert(pa2page(*ptep) == p1);
     assert(page_ref(p1) == 1);
 
+
     ptep = &((pte_t *)KADDR(PDE_ADDR(boot_pgdir[0])))[1];
     assert(get_pte(boot_pgdir, PGSIZE, 0) == ptep);
 
+    // 设置第二个页表项，检查标志位设置情况
     p2 = alloc_page();
     assert(page_insert(boot_pgdir, p2, PGSIZE, PTE_U | PTE_W) == 0);
     assert((ptep = get_pte(boot_pgdir, PGSIZE, 0)) != NULL);
@@ -557,6 +568,7 @@ check_pgdir(void) {
     assert(boot_pgdir[0] & PTE_U);
     assert(page_ref(p2) == 1);
 
+    // 检查引用计数，此处将第二个页表项也设置成了第一个页表项的内容
     assert(page_insert(boot_pgdir, p1, PGSIZE, 0) == 0);
     assert(page_ref(p1) == 2);
     assert(page_ref(p2) == 0);
@@ -564,14 +576,17 @@ check_pgdir(void) {
     assert(pa2page(*ptep) == p1);
     assert((*ptep & PTE_U) == 0);
 
+    // 移除第一个页表项，检查引用计数
     page_remove(boot_pgdir, 0x0);
     assert(page_ref(p1) == 1);
     assert(page_ref(p2) == 0);
 
+    // 移除第二个页表项，检查引用计数
     page_remove(boot_pgdir, PGSIZE);
     assert(page_ref(p1) == 0);
     assert(page_ref(p2) == 0);
 
+    
     assert(page_ref(pa2page(boot_pgdir[0])) == 1);
     free_page(pa2page(boot_pgdir[0]));
     boot_pgdir[0] = 0;
