@@ -5,8 +5,8 @@
 
 
 // 写在最前面
-// 通过阅读代码可知，每个内存块的块头都有一个Page结构体用来保存这个块的具体信息，同时每个Page结构体通过其成员page_link进行连接，
-// 每次通过page_link找到这个块时，向前读取数据即可获得此page_link下的Page中的数据。
+// 通过阅读代码可知，每个内存块都有一个Page与之对应，此Page数组存在空闲内存的开头位置，每个内存块的偏移和储存其信息的Page在Page数组的中偏移相同
+// 空闲内存管理链表通过Page中的page_link相连
 
 /* In the first fit algorithm, the allocator keeps a list of free blocks (known as the free list) and,
    on receiving a request for memory, scans along the list for the first block that is large enough to
@@ -97,7 +97,8 @@ list_entry_t * getPosition(struct Page * pa)
 {
     list_entry_t * le = &free_list;
     le = list_next(le);
-    while(le < &(pa->page_link) && le != &free_list) le = list_next(le);
+    
+    while((unsigned int)le <  (unsigned int)&(pa->page_link) && le != &free_list) le = list_next(le);
     return le;
 }
 
@@ -172,7 +173,7 @@ default_free_pages(struct Page *base, size_t n) {
     }
     nr_free += n;
     // 将最终处理好的内存块插入链表中
-    __list_add(&(base -> page_link), getPosition(p) -> prev, getPosition(p));
+    __list_add(&(base -> page_link), getPosition(base) -> prev, getPosition(base));
     //list_add(&free_list, &(base->page_link));
 }
 

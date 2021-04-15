@@ -224,7 +224,7 @@ page_init(void) {
         SetPageReserved(pages + i);
     }
 
-    // 此处没看懂为啥要加 sizeof(struct Page) * npage 问题保留，初步推测和lab2中其他练习2和练习3有关
+    // 标记空闲内存的位置，为Page信息的储存空出位置
     uintptr_t freemem = PADDR((uintptr_t)pages + sizeof(struct Page) * npage);
 
     for (i = 0; i < memmap->nr_map; i ++) {
@@ -243,6 +243,7 @@ page_init(void) {
                 begin = ROUNDUP(begin, PGSIZE);
                 end = ROUNDDOWN(end, PGSIZE);
                 if (begin < end) {
+                    // 用于将page串入管理链表
                     init_memmap(pa2page(begin), (end - begin) / PGSIZE);
                 }
             }
@@ -361,8 +362,30 @@ pmm_init(void) {
 //  la:     the linear address need to map
 //  create: a logical value to decide if alloc a page for PT
 // return vaule: the kernel virtual address of this pte
+// 此函数用于根据线性地址la查找二级页表中对应的一级页表，如果指定要创建相应的一级页表则申请内存创建
 pte_t *
 get_pte(pde_t *pgdir, uintptr_t la, bool create) {
+    // 根据la映射到pdeptr对应的位置上
+    pde_t * pdeptr = pgdir + PDX(la);
+    // 检查二级页表此页表项是否可用，如果可用直接返回对应一级页表的位置
+    if(*pdeptr & PTE_P) return (pte_t *)KADDR(PTE_ADDR((*pdeptr))) + PTX(la);
+    // 如果需要创建，且此页表项不可用
+    if(create)
+    {
+        // 申请内存用于创建此一级页表
+        struct Page * allocPage = alloc_page();
+        // 检测是否创建成功
+        if(allocPage == NULL) return NULL;
+        // 将此用于创建一级页表的内存清空
+        memset(KADDR(page2pa(allocPage)), 0, PGSIZE);
+        // 设置引用计数
+        set_page_ref(allocPage, 1);
+        // 在二级页表对应位置处登记创建好的一级页表
+        *pdeptr = ((unsigned int)page2pa(allocPage) & ~0x0FFF) | PTE_P | PTE_W | PTE_U;
+        // 返回这个一级页表
+        return (pte_t *)KADDR(PTE_ADDR((*pdeptr))) + PTX(la);
+    }
+    else return NULL;
     /* LAB2 EXERCISE 2: YOUR CODE
      *
      * If you need to visit a physical address, please use KADDR()
@@ -416,6 +439,18 @@ get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store) {
 //note: PT is changed, so the TLB need to be invalidate 
 static inline void
 page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
+    // 首先检查输入是否正确，此页表项是否可用，如果不可用或输入不合法将直接返回
+    if(ptep == NULL || !(*ptep & PTE_P)) return;
+
+    // 取得此一级页表所在的内存块
+    struct Page * freePage = pte2page(*ptep);
+    // 如果此内存块没有别人引用了就杀了它
+    if(page_ref_dec(freePage) == 0) free_page(freePage);
+    // 在二级页表中注销此一级页表
+    *ptep = 0;
+    // 重新载入tlb
+    tlb_invalidate(pgdir, la);
+
     /* LAB2 EXERCISE 3: YOUR CODE
      *
      * Please check if ptep is valid, and tlb must be manually updated if mapping is updated

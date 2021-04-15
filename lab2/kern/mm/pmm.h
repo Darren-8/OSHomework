@@ -79,11 +79,13 @@ page2ppn(struct Page *page) {
     return page - pages;
 }
 
+// 返回Page对应的内存块的首地址偏移，但是未加上KEMBASE
 static inline uintptr_t
 page2pa(struct Page *page) {
     return page2ppn(page) << PGSHIFT;
 }
 
+// 返回实际内存块对应的Page位置，此处加上了KEMBASE
 static inline struct Page *
 pa2page(uintptr_t pa) {
     if (PPN(pa) >= npage) {
