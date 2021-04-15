@@ -83,12 +83,12 @@ default_init_memmap(struct Page *base, size_t n) {
         p->flags = p->property = 0;
         set_page_ref(p, 0);
     }
-    // 将page块连续数量设置成n
+    // 将page块连续数量设置成n，标识这是连续空闲块的第一块
     base->property = n;
     SetPageProperty(base);
     // 总空闲块数量加n
     nr_free += n;
-    // 将空闲块加入list的尾部，注意查看这里list_add_before的具体内容
+    // 将空闲块加入头节点之前，即list的尾部
     list_add_before(&free_list, &(base->page_link));
 }
 
