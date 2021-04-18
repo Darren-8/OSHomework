@@ -58,10 +58,8 @@ void print_pgdir(void);
             __m_kva - KERNBASE;                                         \
         })
 
-/* *
- * KADDR - takes a physical address and returns the corresponding kernel virtual
- * address. It panics if you pass an invalid physical address.
- * */
+
+// 物理地址转换为核心虚拟地址
 #define KADDR(pa) ({                                                    \
             uintptr_t __m_pa = (pa);                                    \
             size_t __m_ppn = PPN(__m_pa);                               \
@@ -74,7 +72,7 @@ void print_pgdir(void);
 extern struct Page *pages;
 extern size_t npage;
 
-//当前二级页表项相对于freemem的第一个struct Page的偏移
+// 当前二级页表项相对于freemem的第一个struct Page的偏移
 static inline ppn_t
 page2ppn(struct Page *page) {
     return page - pages;

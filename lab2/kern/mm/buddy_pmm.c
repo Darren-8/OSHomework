@@ -4,10 +4,10 @@
 #include <buddy_pmm.h>
 
 #define BUDDY_MAX_DEPTH 30
-static unsigned int* buddy_page;
-static unsigned int buddy_page_num; // store buddy system
-static unsigned int max_pages; // maintained by buddy
-static struct Page* buddy_allocatable_base;
+static unsigned int* buddy_page; // 存当前段内最长可供分配的连续内存块大小
+static unsigned int buddy_page_num; // 存储buddy本身需要的页
+static unsigned int max_pages; // buddy储存的页，叶节点数
+static struct Page* buddy_allocatable_base; // 叶节点首地址
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
@@ -17,7 +17,11 @@ buddy_init(void) {}
 static void
 buddy_init_memmap(struct Page *base, size_t n) {
     assert(n > 0);
-    // calc buddy alloc page number
+    
+    // max_pages为总页数n向下取最近的2的幂
+    // 此外还需要额外预留 max_pages*4B*2/4096B 个页存二叉树
+    // 其中4B为一个unsigned int的大小，4096B为一个页的大小
+    // 乘2是因为二叉树的节点接近其叶节点的两倍
     max_pages = 1;
     for (int i = 1; i < BUDDY_MAX_DEPTH; ++i, max_pages <<= 1)
         if (max_pages + (max_pages >> 9) >= n)
@@ -25,17 +29,20 @@ buddy_init_memmap(struct Page *base, size_t n) {
     max_pages >>= 1;
     buddy_page_num = (max_pages >> 9) + 1;
     cprintf("buddy init: total %d, use %d, free %d\n", n, buddy_page_num, max_pages);
-    // set these pages to reserved
+    
+    // 将数据结构本身，即前buddy_page_num个页设置为reserved
     for (int i = 0; i < buddy_page_num; ++i)
         SetPageReserved(base + i);
-    // set non-buddy page to be allocatable
+    
+    // 将叶节点，即之后的max_pages个页设置为property
     buddy_allocatable_base = base + buddy_page_num;
     for (struct Page *p = buddy_allocatable_base; p != base + n; ++p) {
         ClearPageReserved(p);
         SetPageProperty(p);
         set_page_ref(p, 0);
     }
-    // init buddy page
+    
+    // 初始化buddy_page，叶节点置1，每个节点是子节点乘2 
     buddy_page = (unsigned int*)KADDR(page2pa(base));
     for (int i = max_pages; i < max_pages << 1; ++i)
         buddy_page[i] = 1;
@@ -46,6 +53,7 @@ buddy_init_memmap(struct Page *base, size_t n) {
 static struct
 Page* buddy_alloc_pages(size_t n) {
     assert(n > 0);
+    
     if (n > buddy_page[1]) return NULL;
     unsigned int index = 1, size = max_pages;
     for (; size >= n; size >>= 1) {
