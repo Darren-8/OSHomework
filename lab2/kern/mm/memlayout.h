@@ -100,7 +100,7 @@ struct Page {
     int ref;                        // page frame's reference counter，引用计数
     uint32_t flags;                 // array of flags that describe the status of the page frame，占用标志
     unsigned int property;          // the num of free block, used in first fit pm manager，连续内存块数量
-    list_entry_t page_link;         // free list link，内存块连接
+    list_entry_t page_link;         // free list link，内存块的Page链表节点
 };
 
 /* Flags describing the status of a page frame */
