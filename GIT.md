@@ -37,6 +37,12 @@ git clone github项目的URL地址
 
 ## 文件基础操作
 
+给出某次commit的具体信息
+
+```
+git show <commit>
+```
+
 查看当前文件夹中所有文件是否在暂存区。主要查看是否文件已被修改。
 
 ```
@@ -109,6 +115,28 @@ temp/ # 忽略 temp 文件夹下的所有文件，temp 必须是一个文件夹�
 
 ```
 git log 分支名
+
+git long -- GIT.md
+把修改了文件GIT.md的commit列出来，注意--和GIT.md之间一定要有空格
+
+git log --author="小明"
+查看作者
+
+git log --before="2021.4.16"
+git log --after="2021.4.16"
+查看日期
+
+git log --grep="Initial"
+查找字符串
+
+git log --oneline
+简化输出信息
+
+git log -S "Hello, World!"
+当你想要知道 Hello, World! 字符串是什么时候加到项目中哪个文件中去的
+
+git log --stat
+显示详细信息
 ```
 
 查看所有操作记录
