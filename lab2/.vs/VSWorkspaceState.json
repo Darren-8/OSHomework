@@ -1,0 +1,14 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\boot",
+    "\\kern",
+    "\\kern\\debug",
+    "\\kern\\driver",
+    "\\kern\\init",
+    "\\kern\\libs",
+    "\\kern\\mm"
+  ],
+  "SelectedNode": "\\kern\\driver\\intr.h",
+  "PreviewInSolutionExplorer": false
+}

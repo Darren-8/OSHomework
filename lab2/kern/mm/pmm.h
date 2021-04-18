@@ -74,12 +74,13 @@ void print_pgdir(void);
 extern struct Page *pages;
 extern size_t npage;
 
+//当前二级页表项相对于freemem的第一个struct Page的偏移
 static inline ppn_t
 page2ppn(struct Page *page) {
     return page - pages;
 }
 
-// 返回Page对应的内存块的首地址偏移，但是未加上KEMBASE
+// 每个struct Page都与一个物理内存页一一对应，可用这个把一个struct Page转化为其所对应的物理内存页的首地址
 static inline uintptr_t
 page2pa(struct Page *page) {
     return page2ppn(page) << PGSHIFT;

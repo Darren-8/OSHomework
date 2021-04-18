@@ -18,6 +18,7 @@ int
 kern_init(void) {
     extern char edata[], end[];
     memset(edata, 0, end - edata);
+    //Çå¿Õ.bss¶Î
 
     cons_init();                // init the console
 

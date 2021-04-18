@@ -192,6 +192,7 @@ static inline uintptr_t
 rcr3(void) {
     uintptr_t cr3;
     asm volatile ("mov %%cr3, %0" : "=r" (cr3) :: "memory");
+    // 
     return cr3;
 }
 

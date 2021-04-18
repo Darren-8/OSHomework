@@ -32,12 +32,18 @@
 static struct taskstate ts = {0};
 
 // virtual address of physicall page array
+// 维护一个struct Page *pages,这个pages是一个struct Page数组的首项
+// 每一个struct Page与一个物理内存页一一对应(从小到大)
+// *pages == Page[npage]
 struct Page *pages;
 // amount of physical memory (in pages)
+// npage就是物理内存页的总数
 size_t npage = 0;
 
 // virtual address of boot-time page directory
-pde_t *boot_pgdir = NULL;
+// 这个来自于entry.S
+extern pde_t __boot_pgdir;
+pde_t* boot_pgdir = &__boot_pgdir;
 // physical address of boot-time page directory
 uintptr_t boot_cr3;
 
@@ -120,16 +126,23 @@ load_esp0(uintptr_t esp0) {
 static void
 gdt_init(void) {
     // set boot kernel stack and default SS0
+    // 设置初始内核栈基址和默认的 SS0
     load_esp0((uintptr_t)bootstacktop);
     ts.ts_ss0 = KERNEL_DS;
 
     // initialize the TSS filed of the gdt
+    /**
+     * 初始化 gdt 中的 TSS 字段:
+     * gdt[索引] = type | base | limit | dpl
+     */
     gdt[SEG_TSS] = SEGTSS(STS_T32A, (uintptr_t)&ts, sizeof(ts), DPL_KERNEL);
 
     // reload all segment registers
+    // 更新所有段寄存器(的段选择子)的值
     lgdt(&gdt_pd);
 
     // load the TSS
+    //  加载 TSS 段选择子到 TR 寄存器
     ltr(GD_TSS);
 }
 
@@ -189,9 +202,20 @@ nr_free_pages(void) {
 // 内存块块头初始化
 static void
 page_init(void) {
+    /*
+    * 目标: 根据探测得到的物理空间分布,初始化 pages 表格.
+    * 1. 确定 pages 基址. pages是end上面的第一个页表项(struct Page)的指针,这意味着从此就已经突破了内核文件本身的内存空间,开始动态分配内存.
+    * 2. 确定 page 数 npage,即 可管理内存的页数,即 物理内存可以被分为多少个页.
+    *    2.1 确定实际管理的物理内存大小maxpa.即向上取探测结果中的最大可用地址,但不得大于管理上限 KMEMSIZE. maxpa = min{maxpa, KMEMSIZE}.
+    *    2.2 npage = maxpa/PAGESIZE.
+    *    2.3 通过 pages + sizeof(struct Page) * npage 得出 freemem 的地址
+    * 3. 把 freemem 以上所有内存页链入freelist
+    */
+
     // 首先获得利用BIOS的15h中断获得的内存信息，具体可见bootasm.S
     struct e820map *memmap = (struct e820map *)(0x8000 + KERNBASE);
     uint64_t maxpa = 0;
+    //maxpa是物理内存边界
 
     // 输出内存块的信息
     cprintf("e820map:\n");
@@ -214,9 +238,9 @@ page_init(void) {
 
     extern char end[];
 
-    // 对内存进行分块，获得分得的块的数量，即计算出需要管理的块的数量
+    // 对内存进行分块，获得分得的块的数量，即计算出需要管理的块的数量，该物理内存至多允许npage个块
     npage = maxpa / PGSIZE;
-    // 获得ucore的加载结束地址所在块的下一个块
+    // 获得ucore的加载结束地址所在块的下一个块，ROUNDUP向上取整
     pages = (struct Page *)ROUNDUP((void *)end, PGSIZE);
 
     // 这些块标记占用，也就是在标记被检测到的操作系统可以操作的块，方便后期块管理初始化程序的运行
@@ -227,11 +251,13 @@ page_init(void) {
     // 标记空闲内存的位置，为Page信息的储存空出位置
     uintptr_t freemem = PADDR((uintptr_t)pages + sizeof(struct Page) * npage);
 
+    // 把freemem以上的所有空闲物理内存全部链入freelist
     for (i = 0; i < memmap->nr_map; i ++) {
         uint64_t begin = memmap->map[i].addr, end = begin + memmap->map[i].size;
         // 如果此内存部分允许操作系统管理则执行下列程序
         if (memmap->map[i].type == E820_ARM) {
             // 边界检查，防止溢出
+            // 满足 begin < freemem && end > KMEMSIZE 的内存都是非可用的
             if (begin < freemem) {
                 begin = freemem;
             }
@@ -244,6 +270,7 @@ page_init(void) {
                 end = ROUNDDOWN(end, PGSIZE);
                 if (begin < end) {
                     // 用于将page串入管理链表
+                    // initmemmap将一块连续的空闲地址加入freelist
                     init_memmap(pa2page(begin), (end - begin) / PGSIZE);
                 }
             }
@@ -251,26 +278,30 @@ page_init(void) {
     }
 }
 
-static void
-enable_paging(void) {
-    lcr3(boot_cr3);
-
-    // turn on paging
-    uint32_t cr0 = rcr0();
-    cr0 |= CR0_PE | CR0_PG | CR0_AM | CR0_WP | CR0_NE | CR0_TS | CR0_EM | CR0_MP;
-    cr0 &= ~(CR0_TS | CR0_EM);
-    lcr0(cr0);
-}
-
 //boot_map_segment - setup&enable the paging mechanism
 // parameters
 //  la:   linear address of this memory need to map (after x86 segment map)
 //  size: memory size
 //  pa:   physical address of this memory
-//  perm: permission of this memory  
+//  perm: permission of this memory 
+/**
+ * 对区域进行映射,专用于内核.
+ *      把虚拟地址[la, la + size)映射至物理地址[pa, pa + size),映射关系保存在 pgdir 指向的一级页表上.
+ *      la 和 pa 将向下对 PGSIZE 取整.
+ * 
+ *      把所有物理内存区域映射到虚拟空间.即 [0, KMEMSIZE)->[KERNBASE, KERNBASE+KMEMSIZE);
+ * 映射过程:
+ *      对于给定的虚拟地址,每隔一个 PGSIZE值,就根据指定的一级页表地址pgdir,找到对应的二级页表项,写入相应的的物理地址和属性.
+ *
+ * 计算: 对于内核初始值 KMEMSIZE=896MB,需要多少个/多大空间的二级页表来保存映射关系?
+ *      1) 对于一级页表, 参考 entry.S, 一个 PAGESIZE 大小的一级页表,在 KERNELBASE之上还可以维护 1G 的内存>896MB,所以仍然使用已经定义的一级页表__boot_pgdir即可.
+ *      2) 对于二级页表, 则需要896M/4K=224K个 entry,每个二级页表含 1K个 entry,所以共需要 224 个二级页表.
+ *      3) ucore 中比较方便地设定为每个页表的大小是 1024 个,正好占用一个 page.所以需要224*4K=896KB 的空间容纳这些页表.
+ */
 static void
 boot_map_segment(pde_t *pgdir, uintptr_t la, size_t size, uintptr_t pa, uint32_t perm) {
     // 检查是否对齐
+    // 对于每一个物理页，写一个对应页表
     assert(PGOFF(la) == PGOFF(pa));
     size_t n = ROUNDUP(size + PGOFF(la), PGSIZE) / PGSIZE;
     la = ROUNDDOWN(la, PGSIZE);
@@ -279,6 +310,7 @@ boot_map_segment(pde_t *pgdir, uintptr_t la, size_t size, uintptr_t pa, uint32_t
         pte_t *ptep = get_pte(pgdir, la, 1);
         assert(ptep != NULL);
         *ptep = pa | PTE_P | perm;
+        // 写 la 对应的二级页表; 要保证权限的正确性.
     }
 }
 
@@ -299,62 +331,63 @@ boot_alloc_page(void) {
 // 进行内存管理初始化
 void
 pmm_init(void) {
+    //现在单独维护一个变量boot_cr3 即内核一级页表基址.这个boot_pgdir就是我们刚刚开启分页时所采用的那个一级页表
+    //注意，此时只有一个一级页表项，一次只能维护VA:[KERNBASE,KERNBASE+4M)~PA:[0,4M)的页映射
+    boot_cr3 = PADDR(boot_pgdir);
+
     //We need to alloc/free the physical memory (granularity is 4KB or other size). 
     //So a framework of physical memory manager (struct pmm_manager)is defined in pmm.h
     //First we should init a physical memory manager(pmm) based on the framework.
     //Then pmm can alloc/free the physical memory. 
     //Now the first_fit/best_fit/worst_fit/buddy_system pmm are available.
     // 初始化用于空闲内存管理的链表
+    // 初始化物理内存分配器,之后即可使用其 alloc/free pages 的功能
     init_pmm_manager();
 
     // detect physical memory space, reserve already used memory,
     // then use pmm->init_memmap to create free page list
     // 对内存中每个块的块头部分进行初始化
+    // 探测物理内存分布,初始化 pages, 然后调用 pmm->init_memmap 来初始化 freelist
     page_init();
 
     //use pmm->check to verify the correctness of the alloc/free function in a pmm
     // 执行检查程序，也就是先申请一部分内存，然后再还回去
+    // 测试pmm 的alloc/free
     check_alloc_page();
 
-    // create boot_pgdir, an initial page directory(Page Directory Table, PDT)
-    // 申请一个内存块用于存放二级页表
-    boot_pgdir = boot_alloc_page();
-    memset(boot_pgdir, 0, PGSIZE);
-    boot_cr3 = PADDR(boot_pgdir);
-
-    // 检查我们的代码
+    //测试用函数
     check_pgdir();
 
+    // 编译时校验: KERNBASE和KERNTOP都是PTSIZE的整数,即可以用两级页表管理(4M 的倍数)
+    // PTSIZE = bytes mapped by a page directory entry = 1k * 4k
     static_assert(KERNBASE % PTSIZE == 0 && KERNTOP % PTSIZE == 0);
 
     // recursively insert boot_pgdir in itself
     // to form a virtual page table at virtual address VPT
     // PDX用于取前10位，此处是将二级页表本身作为一个一级页表当成自己的页表项
+    // 自映射的实现
     boot_pgdir[PDX(VPT)] = PADDR(boot_pgdir) | PTE_P | PTE_W;
 
     // map all physical memory to linear memory with base linear addr KERNBASE
     //linear_addr KERNBASE~KERNBASE+KMEMSIZE = phy_addr 0~KMEMSIZE
     //But shouldn't use this map until enable_paging() & gdt_init() finished.
     // 将所有内存块放入页表，同时设置用户不可用防止内存读写
+    // 把所有物理内存区域映射到虚拟空间.即 [0, KMEMSIZE)->[KERNBASE, KERNBASE+KERNBASE);
+    // 在此过程中会建立二级页表, 写对应的一级页表.
+    // 可见，boot_map_segment将内核的虚拟空间映射在了二级页表上，一级页表还是之前的boot_pgdir
     boot_map_segment(boot_pgdir, KERNBASE, KMEMSIZE, 0, PTE_W);
-
-    //temporary map: 
-    //virtual_addr 3G~3G+4M = linear_addr 0~4M = linear_addr 3G~3G+4M = phy_addr 0~4M     
-    boot_pgdir[0] = boot_pgdir[PDX(KERNBASE)];
-
-    // 设置内存读写
-    enable_paging();
 
     //reload gdt(third time,the last time) to map all physical memory
     //virtual_addr 0~4G=liear_addr 0~4G
     //then set kernel stack(ss:esp) in TSS, setup TSS in gdt, load TSS
+    // 到目前为止还是用的 bootloader 的GDT.
+    // 现在更新为内核的 GDT,把内存平铺, virtual_addr 0 ~ 4G = linear_addr 0 ~ 4G.
+    // 然后设置内存中的TSS即 ts, ss:esp, 设置 gdt 中的 TSS指向&ts, 最后设置 TR 寄存器的值为 gdt 中 TSS 项索引.
     gdt_init();
-
-    //disable the map of virtual_addr 0~4M
-    boot_pgdir[0] = 0;
 
     //now the basic virtual memory map(see memalyout.h) is established.
     //check the correctness of the basic virtual memory map.
+    // 基本的虚拟地址空间分布已经建立.检查其正确性.
     check_boot_pgdir();
 
     print_pgdir();
@@ -372,19 +405,21 @@ pmm_init(void) {
 pte_t *
 get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     // 根据la映射到pdeptr对应的位置上
+    // pdeptr == 页目录项的指针
     pde_t * pdeptr = pgdir + PDX(la);
     // 检查二级页表此页表项是否可用，如果可用直接返回对应一级页表的位置
+    // 指针不为空(初始化为全零) 且 Present位(对地址转换是否有效) 有效
     if(*pdeptr & PTE_P) return (pte_t *)KADDR(PTE_ADDR((*pdeptr))) + PTX(la);
     // 如果需要创建，且此页表项不可用
     if(create)
     {
-        // 申请内存用于创建此一级页表
+        // 创建一个二级页表项，指向分配的物理内存页
         struct Page * allocPage = alloc_page();
         // 检测是否创建成功
         if(allocPage == NULL) return NULL;
-        // 将此用于创建一级页表的内存清空
+        // 将此用于创建二级页表的内存清空
         memset(KADDR(page2pa(allocPage)), 0, PGSIZE);
-        // 设置引用计数
+        // 设置引用计数，该存放一组二级页表项的物理页已被使用一次
         set_page_ref(allocPage, 1);
         // 在二级页表对应位置处登记创建好的一级页表
         *pdeptr = ((unsigned int)page2pa(allocPage) & ~0x0FFF) | PTE_P | PTE_W | PTE_U;
@@ -435,7 +470,7 @@ get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store) {
         *ptep_store = ptep;
     }
     if (ptep != NULL && *ptep & PTE_P) {
-        return pa2page(*ptep);
+        return pte2page(*ptep);
     }
     return NULL;
 }
@@ -552,7 +587,7 @@ check_pgdir(void) {
     pte_t *ptep;
     // 检查正常查询情况下函数的返回结果是否正确
     assert((ptep = get_pte(boot_pgdir, 0x0, 0)) != NULL);
-    assert(pa2page(*ptep) == p1);
+    assert(pte2page(*ptep) == p1);
     assert(page_ref(p1) == 1);
 
 
@@ -573,7 +608,7 @@ check_pgdir(void) {
     assert(page_ref(p1) == 2);
     assert(page_ref(p2) == 0);
     assert((ptep = get_pte(boot_pgdir, PGSIZE, 0)) != NULL);
-    assert(pa2page(*ptep) == p1);
+    assert(pte2page(*ptep) == p1);
     assert((*ptep & PTE_U) == 0);
 
     // 移除第一个页表项，检查引用计数
@@ -587,8 +622,8 @@ check_pgdir(void) {
     assert(page_ref(p2) == 0);
 
     
-    assert(page_ref(pa2page(boot_pgdir[0])) == 1);
-    free_page(pa2page(boot_pgdir[0]));
+    assert(page_ref(pde2page(boot_pgdir[0])) == 1);
+    free_page(pde2page(boot_pgdir[0]));
     boot_pgdir[0] = 0;
 
     cprintf("check_pgdir() succeeded!\n");
@@ -622,7 +657,7 @@ check_boot_pgdir(void) {
     assert(strlen((const char *)0x100) == 0);
 
     free_page(p);
-    free_page(pa2page(PDE_ADDR(boot_pgdir[0])));
+    free_page(pde2page(PDE_ADDR(boot_pgdir[0])));
     boot_pgdir[0] = 0;
 
     cprintf("check_boot_pgdir() succeeded!\n");
