@@ -12,8 +12,16 @@ static struct Page* buddy_allocatable_base; // 页首地址
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
 /*
+内存布局：
++0                          其他数据结构
++1                          buddy_page
++buddy_page_num             .
++buddy_page_num+1           buddy_allocatable_base
++buddy_page_num+max_pages   .
++buddy_page_num+max_pages+1 空闲
+
 zkw线段树有一些很好的性质
-0  1         0       1
+   1                 1
  2   3   ->     10       11
 4 5 6 7      100  101 110  111
 下标为 n
@@ -126,10 +134,11 @@ buddy_free_pages(struct Page *base, size_t n) {
 
     // 向上调整buddy_page
     for (buddy_page[index] = size; size <<= 1, (index >>= 1) > 0;)
-        buddy_page[index] =
-            (buddy_page[index << 1] + buddy_page[index << 1 | 1] == size) ?
-            size :
-            max(buddy_page[index << 1], buddy_page[index << 1 | 1]);
+    if(buddy_page[index << 1] + buddy_page[index << 1 | 1] == size){
+        buddy_page[index] = size;
+    } else {
+        buddy_page[index] = max(buddy_page[index << 1], buddy_page[index << 1 | 1]);
+    }
 }
 
 static size_t
@@ -139,39 +148,50 @@ buddy_nr_free_pages(void) {
 
 static void
 buddy_check(void) {
-    int all_pages = nr_free_pages();
-    struct Page* p0, *p1, *p2, *p3;
-    assert(alloc_pages(all_pages + 1) == NULL);
+    int all_pages = nr_free_pages();                //    4
+    struct Page* pa, *pb, *pc, *pd;                 //  2   2
+    assert(alloc_pages(all_pages + 1) == NULL);     // 1 1 1 1
 
-    p0 = alloc_pages(1);
-    assert(p0 != NULL);
-    p1 = alloc_pages(2);
-    assert(p1 == p0 + 2);
-    assert(!PageReserved(p0) && !PageProperty(p0));
-    assert(!PageReserved(p1) && !PageProperty(p1));
+    pa = alloc_pages(1);                            //    2
+    assert(pa != NULL);                             //  1   2
+    assert(!PageReserved(pa) && !PageProperty(pa)); // a 1 1 1
 
-    p2 = alloc_pages(1);
-    assert(p2 == p0 + 1);
-    p3 = alloc_pages(2);
-    assert(p3 == p0 + 4);
-    assert(!PageProperty(p3) && !PageProperty(p3 + 1) && PageProperty(p3 + 2));
+    pb = alloc_pages(2);                            //    1
+    assert(pb == pa + 2);                           //  1   0
+    assert(!PageReserved(pb) && !PageProperty(pb)); // a 1 b .
 
-    free_pages(p1, 2);
-    assert(PageProperty(p1) && PageProperty(p1 + 1));
-    assert(p1->ref == 0);
+    pc = alloc_pages(1);                            //    0
+    assert(pc == pa + 1);                           //  0   0
+                                                    // a c b .
 
-    free_pages(p0, 1);
-    free_pages(p2, 1);
+    pd = alloc_pages(2);                                //        2
+    assert(pd == pa + 4);                               //    0       2
+    assert(!PageProperty(pd) &&                         //  0   0   0   2
+        !PageProperty(pd + 1) && PageProperty(pd + 2)); // a c b . d . 1 1
+    
+    free_pages(pb, 2);                                  //        4
+    assert(PageProperty(pb) && PageProperty(pb + 1));   //    2       2
+    assert(pb->ref == 0);                               //  0   2   0   2
+    // pb still here                                    // a c b 1 d . 1 1
 
-    p2 = alloc_pages(2);
-    assert(p2 == p0);
-    free_pages(p2, 2);
-    assert((*(p2 + 1)).ref == 0);
-    assert(nr_free_pages() == all_pages >> 1);
+    free_pages(pa, 1);  //        4
+    free_pages(pc, 1);  //    4       2
+                        //  2   2   0   2
+                        // a c b 1 d . 1 1
 
-    free_pages(p3, 2);
-    p1 = alloc_pages(129);
-    free_pages(p1, 256);
+    pc = alloc_pages(2);                        //         2
+    assert(pc == pa);                           //     2       2
+                                                //   0   2   0   2
+                                                // ac . b 1 d . 1 1
+
+    free_pages(pc, 2);                          //         4
+    assert((*(pc + 1)).ref == 0);               //     4       2
+    assert(nr_free_pages() == all_pages >> 1);  //   2   2   0   2
+                                                // ac 1 b 1 d . 1 1
+
+    free_pages(pd, 2); // all clear
+    pb = alloc_pages(129);
+    free_pages(pb, 256);
 }
 
 const struct pmm_manager buddy_pmm_manager = {
