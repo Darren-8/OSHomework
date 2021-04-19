@@ -141,6 +141,7 @@ buddy_free_pages(struct Page *base, size_t n) {
     }
 }
 
+// 根节点就是空闲页数
 static size_t
 buddy_nr_free_pages(void) {
     return buddy_page[1];
@@ -149,8 +150,8 @@ buddy_nr_free_pages(void) {
 static void
 buddy_check(void) {
     int all_pages = nr_free_pages();                //    4
-    struct Page* pa, *pb, *pc, *pd;                 //  2   2
-    assert(alloc_pages(all_pages + 1) == NULL);     // 1 1 1 1
+    assert(alloc_pages(all_pages + 1) == NULL);     //  2   2
+    struct Page* pa, *pb, *pc, *pd;                 // 1 1 1 1
 
     pa = alloc_pages(1);                            //    2
     assert(pa != NULL);                             //  1   2
@@ -186,11 +187,12 @@ buddy_check(void) {
 
     free_pages(pc, 2);                          //         4
     assert((*(pc + 1)).ref == 0);               //     4       2
-    assert(nr_free_pages() == all_pages >> 1);  //   2   2   0   2
+                                                //   2   2   0   2
                                                 // ac 1 b 1 d . 1 1
 
     free_pages(pd, 2); // all clear
     pb = alloc_pages(129);
+    assert(!PageProperty(pb) && !PageProperty(pb + 200));
     free_pages(pb, 256);
 }
 
