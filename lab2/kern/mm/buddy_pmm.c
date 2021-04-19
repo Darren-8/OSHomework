@@ -12,6 +12,10 @@ static struct Page* buddy_allocatable_base; // 页首地址
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
 /*
+要进行测试，需要作两处修改：
+kern/mm/pmm.c(153): pmm_manager = &default_pmm_manager;
+tools/grade.sh(325): 'memory management: default_pmm_manager'
+
 内存布局：
 +0                          其他数据结构
 +1                          buddy_page
