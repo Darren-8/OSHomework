@@ -8,15 +8,15 @@ V       := @
 #USELLVM := 1
 # try to infer the correct GCCPREFX
 ifndef GCCPREFIX
-GCCPREFIX := $(shell if i386-ucore-elf-objdump -i 2>&1 | grep '^elf32-i386$$' >/dev/null 2>&1; \
-	then echo 'i386-ucore-elf-'; \
+GCCPREFIX := $(shell if i386-elf-objdump -i 2>&1 | grep '^elf32-i386$$' >/dev/null 2>&1; \
+	then echo 'i386-elf-'; \
 	elif objdump -i 2>&1 | grep 'elf32-i386' >/dev/null 2>&1; \
 	then echo ''; \
 	else echo "***" 1>&2; \
-	echo "*** Error: Couldn't find an i386-ucore-elf version of GCC/binutils." 1>&2; \
-	echo "*** Is the directory with i386-ucore-elf-gcc in your PATH?" 1>&2; \
-	echo "*** If your i386-ucore-elf toolchain is installed with a command" 1>&2; \
-	echo "*** prefix other than 'i386-ucore-elf-', set your GCCPREFIX" 1>&2; \
+	echo "*** Error: Couldn't find an i386-elf version of GCC/binutils." 1>&2; \
+	echo "*** Is the directory with i386-elf-gcc in your PATH?" 1>&2; \
+	echo "*** If your i386-elf toolchain is installed with a command" 1>&2; \
+	echo "*** prefix other than 'i386-elf-', set your GCCPREFIX" 1>&2; \
 	echo "*** environment variable to that prefix and run 'make' again." 1>&2; \
 	echo "*** To turn off this error, run 'gmake GCCPREFIX= ...'." 1>&2; \
 	echo "***" 1>&2; exit 1; fi)
@@ -48,13 +48,13 @@ ifndef  USELLVM
 HOSTCC		:= gcc
 HOSTCFLAGS	:= -g -Wall -O2
 CC		:= $(GCCPREFIX)gcc
-CFLAGS	:= -fno-builtin -Wall -ggdb -m32 -gstabs -nostdinc $(DEFS)
+CFLAGS	:= -march=i686 -fno-builtin -fno-PIC -Wall -ggdb -m32 -gstabs -nostdinc $(DEFS)
 CFLAGS	+= $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 else
 HOSTCC		:= clang
 HOSTCFLAGS	:= -g -Wall -O2
 CC		:= clang
-CFLAGS	:= -fno-builtin -Wall -g -m32 -mno-sse -nostdinc $(DEFS)
+CFLAGS	:= -march=i686 -fno-builtin -fno-PIC -Wall -g -m32 -nostdinc $(DEFS)
 CFLAGS	+= $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 endif
 
@@ -62,7 +62,7 @@ GDB		:= $(GCCPREFIX)gdb
 CTYPE	:= c S
 
 LD      := $(GCCPREFIX)ld
-LDFLAGS	:= -m $(shell $(LD) -V | grep elf_i386 2>/dev/null)
+LDFLAGS	:= -m $(shell $(LD) -V | grep elf_i386 2>/dev/null | head -n 1)
 LDFLAGS	+= -nostdlib
 
 OBJCOPY := $(GCCPREFIX)objcopy
@@ -224,32 +224,32 @@ endif
 
 # files for grade script
 
-targets: $(TARGETS)
+TARGETS: $(TARGETS)
 
-.DEFAULT_GOAL := targets
+.DEFAULT_GOAL := TARGETS
 
 QEMUOPTS = -hda $(UCOREIMG)
 
-.PHONY: qemu qemu-nox gdb debug debug-mon debug-nox
-qemu-mon: targets
+.PHONY: qemu qemu-nox debug debug-nox
+qemu-mon: $(UCOREIMG)
 	$(V)$(QEMU)  -no-reboot -monitor stdio $(QEMUOPTS) -serial null
-qemu: targets
+qemu: $(UCOREIMG)
 	$(V)$(QEMU)  -no-reboot -parallel stdio $(QEMUOPTS) -serial null
 
-qemu-nox: targets
+qemu-nox: $(UCOREIMG)
 	$(V)$(QEMU)  -no-reboot -serial mon:stdio $(QEMUOPTS) -nographic
 
-gdb:
-	$(V)$(GDB) -q -x tools/gdbinit
+TERMINAL := gnome-terminal
 
-debug: targets
-	$(V)$(QEMU) -S -s -parallel stdio $(QEMUOPTS) -serial null
+debug: $(UCOREIMG)
+	$(V)$(QEMU) -S -s -parallel stdio $(QEMUOPTS) -serial null &
+	$(V)sleep 2
+	$(V)$(TERMINAL) -e "$(GDB) -q -x tools/gdbinit"
 
-debug-mon: targets
-	$(V)$(QEMU) -S -s -monitor stdio $(QEMUOPTS) -parallel null -serial null
-
-debug-nox: targets
-	$(V)$(QEMU) -S -s -serial mon:stdio $(QEMUOPTS) -nographic
+debug-nox: $(UCOREIMG)
+	$(V)$(QEMU) -S -s -serial mon:stdio $(QEMUOPTS) -nographic &
+	$(V)sleep 2
+	$(V)$(TERMINAL) -e "$(GDB) -q -x tools/gdbinit"
 
 .PHONY: grade touch
 

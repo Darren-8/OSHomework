@@ -97,10 +97,10 @@ struct e820map {
  * that convert Page to other data types, such as phyical address.
  * */
 struct Page {
-    int ref;                        // page frame's reference counter，引用计数
-    uint32_t flags;                 // array of flags that describe the status of the page frame，占用标志
-    unsigned int property;          // the num of free block, used in first fit pm manager，连续内存块数量
-    list_entry_t page_link;         // free list link，内存块的Page链表节点
+    int ref;                        // page frame's reference counter
+    uint32_t flags;                 // array of flags that describe the status of the page frame
+    unsigned int property;          // the num of free block, used in first fit pm manager
+    list_entry_t page_link;         // free list link
 };
 
 /* Flags describing the status of a page frame */
