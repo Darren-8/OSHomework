@@ -38,18 +38,21 @@ kern_init(void) {
     pic_init();                 // init interrupt controller
     idt_init();                 // init interrupt descriptor table
 
-
+    // 检查mm和vma相关函数是否正常
     vmm_init();                 // init virtual memory management
 
+    // 加载硬件
     ide_init();                 // init ide devices
+    // 检查内存换入换出算法正确性
     swap_init();                // init swap
 
+    // 以下为 Lab1 内容
     clock_init();               // init clock interrupt
     intr_enable();              // enable irq interrupt
 
     //LAB1: CAHLLENGE 1 If you try to do it, uncomment lab1_switch_test()
     // user/kernel mode switch test
-    lab1_switch_test();
+    // lab1_switch_test();
 
     /* do nothing */
     while (1);

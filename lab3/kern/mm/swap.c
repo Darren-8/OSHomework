@@ -19,6 +19,7 @@
 static struct swap_manager *sm;
 size_t max_swap_offset;
 
+// 此处用于标识内存交换的硬件和程序是否可用并且初始化完成，如果初始化完成将此设置为1。置1也表明正在检查swap部分的代码。
 volatile int swap_init_ok = 0;
 
 unsigned int swap_page[CHECK_VALID_VIR_PAGE_NUM];
@@ -30,6 +31,7 @@ static void check_swap(void);
 int
 swap_init(void)
 {
+     // 进行设备初始化
      swapfs_init();
 
      if (!(1024 <= max_swap_offset && max_swap_offset < MAX_SWAP_OFFSET_LIMIT))
@@ -119,6 +121,7 @@ swap_out(struct mm_struct *mm, int n, int in_tick)
 int
 swap_in(struct mm_struct *mm, uintptr_t addr, struct Page **ptr_result)
 {
+     // 申请一块内存块用于读入操作
      struct Page *result = alloc_page();
      assert(result!=NULL);
 
@@ -126,11 +129,13 @@ swap_in(struct mm_struct *mm, uintptr_t addr, struct Page **ptr_result)
      // cprintf("SWAP: load ptep %x swap entry %d to vaddr 0x%08x, page %x, No %d\n", ptep, (*ptep)>>8, addr, result, (result-pages));
     
      int r;
+     // 从硬盘中读取内存块
      if ((r = swapfs_read((*ptep), result)) != 0)
      {
         assert(r!=0);
      }
      cprintf("swap_in: load disk swap entry %d with swap_page in vadr 0x%x\n", (*ptep)>>8, addr);
+     // 将读入的内存块所在的内存位置返回
      *ptr_result=result;
      return 0;
 }

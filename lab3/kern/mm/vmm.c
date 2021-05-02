@@ -50,6 +50,7 @@ mm_create(void) {
         mm->pgdir = NULL;
         mm->map_count = 0;
 
+        // 如果内存交换硬件和程序初始化完成，表明正在测试swap部分，则将mm的swap功能部分初始化
         if (swap_init_ok) swap_init_mm(mm);
         else mm->sm_priv = NULL;
     }
@@ -398,9 +399,28 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     *   mm->pgdir : the PDT of these vma
     *
     */
+    // 检查此虚拟地址对应的内存块是否已经被分配，如果没有被分配就分配一个新的内存块
     ptep = get_pte(mm -> pgdir, addr, 1);
     if(*ptep == 0) {
         pgdir_alloc_page(mm -> pgdir, addr, perm);
+    }
+    else {
+        // 检查进行内存交换的设备和程序是否就绪
+        if(swap_init_ok) {
+            struct Page *page = NULL;
+            // 将内存块内容装载进入内存
+            if(swap_in(mm, addr, &page) != 0) goto failed;
+            // 将装载好的内存块插入到页目录中
+            page_insert(mm -> pgdir, page, addr, perm);
+            // 将换入的内存块加入换入队列
+            swap_map_swappable(mm, addr, page, 1);
+            // 设置此内存块首地址对应的虚拟地址
+            page -> pra_vaddr = addr;
+        }
+        else {
+            cprintf("no swap_init_ok but ptep is %x, failed\n",*ptep);
+            goto failed;
+        }
     }
 #if 0
     /*LAB3 EXERCISE 1: YOUR CODE*/
