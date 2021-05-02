@@ -665,6 +665,7 @@ void *
 kmalloc(size_t n) {
     void * ptr=NULL;
     struct Page *base=NULL;
+    // 为什么此处n的上界要求是这个，存疑
     assert(n > 0 && n < 1024*0124);
     int num_pages=(n+PGSIZE-1)/PGSIZE;
     base = alloc_pages(num_pages);

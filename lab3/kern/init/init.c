@@ -31,10 +31,13 @@ kern_init(void) {
 
     grade_backtrace();
 
+    // 内存管理器加载，和 Lab2 相同
     pmm_init();                 // init physical memory management
 
+    // 设置中断控制器，和 Lab1 相同
     pic_init();                 // init interrupt controller
     idt_init();                 // init interrupt descriptor table
+
 
     vmm_init();                 // init virtual memory management
 
