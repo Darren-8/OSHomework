@@ -8,9 +8,11 @@
 kern_entry:
     # load pa of boot pgdir
     movl $REALLOC(__boot_pgdir), %eax
+    # cr3为页目录基址寄存器
     movl %eax, %cr3
 
     # enable paging
+    # cr0是控制寄存器，此处是取消写保护
     movl %cr0, %eax
     orl $(CR0_PE | CR0_PG | CR0_AM | CR0_WP | CR0_NE | CR0_TS | CR0_EM | CR0_MP), %eax
     andl $~(CR0_TS | CR0_EM), %eax
@@ -18,6 +20,7 @@ kern_entry:
 
     # update eip
     # now, eip = 0x1.....
+    # 将next的地址赋给寄存器
     leal next, %eax
     # set eip = KERNBASE + 0x1.....
     jmp *%eax

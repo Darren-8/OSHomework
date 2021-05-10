@@ -6,6 +6,7 @@ OUTPUT_ARCH(i386)
 ENTRY(kern_entry)
 
 SECTIONS {
+    /* 此处为ucore中kern_entry的代码地址 */
     /* Load the kernel at this address: "." means the current address */
     . = 0xC0100000;
 
@@ -55,7 +56,7 @@ SECTIONS {
         *(.bss)
     }
 
-    PROVIDE(end = .);
+    PROVIDE(end = .); /* bootloader加载的结束地址 */
 
     /DISCARD/ : {
         *(.eh_frame .note.GNU-stack)
