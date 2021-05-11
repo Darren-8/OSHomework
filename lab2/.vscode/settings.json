@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "default_pmm.h": "c",
+        "buddy_pmm.h": "c"
+    }
+}
