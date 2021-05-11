@@ -36,7 +36,7 @@ struct mm_struct {
     pde_t *pgdir;                  // the PDT of these vma
     int map_count;                 // the count of these vma
     // 记录在内存内的内存块的从磁盘中换入的顺序，即内存换入队列
-    void *sm_priv;                   // the private data for swap manager
+    void *sm_priv;                 // the private data for swap manager
 };
 
 struct vma_struct *find_vma(struct mm_struct *mm, uintptr_t addr);
