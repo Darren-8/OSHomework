@@ -214,7 +214,7 @@ check_vma_struct(void) {
         assert(vma != NULL);
         insert_vma_struct(mm, vma);
     }
-    // 以上两个for将0~502中模5余0,1的虚拟地址都映射到同一个页目录上
+    // 以上两个for将5~502中模5余0,1的虚拟地址都映射到同一个页目录上
 
     list_entry_t *le = list_next(&(mm->mmap_list));
 
@@ -239,14 +239,14 @@ check_vma_struct(void) {
         struct vma_struct *vma5 = find_vma(mm, i+4);
         assert(vma5 == NULL);
 
-        assert(vma1->vm_start == i  && vma1->vm_end == i  + 2);
-        assert(vma2->vm_start == i  && vma2->vm_end == i  + 2);
+        assert(vma1->vm_start == i  && vma1->vm_end == i + 2);
+        assert(vma2->vm_start == i  && vma2->vm_end == i + 2);
     }
 
-    for (i =4; i>=0; i--) {
-        struct vma_struct *vma_below_5= find_vma(mm,i);
-        if (vma_below_5 != NULL ) {
-           cprintf("vma_below_5: i %x, start %x, end %x\n",i, vma_below_5->vm_start, vma_below_5->vm_end); 
+    for (i = 4; i >= 0; i--) {
+        struct vma_struct *vma_below_5 = find_vma(mm, i);
+        if (vma_below_5 != NULL) {
+           cprintf("vma_below_5: i %x, start %x, end %x\n", i, vma_below_5->vm_start, vma_below_5->vm_end); 
         }
         assert(vma_below_5 == NULL);
     }

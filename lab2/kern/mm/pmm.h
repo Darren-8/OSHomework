@@ -79,8 +79,12 @@ page2ppn(struct Page *page) {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 // 每个struct Page都与一个物理内存页一一对应，可用这个把一个struct Page转化为其所对应的物理内存页的首地址
 =======
+>>>>>>> refs/remotes/origin/main
+=======
+// 每个struct Page都与一个物理内存页一一对应，可用这个把一个struct Page转化为其所对应的物理内存页的首地址
 >>>>>>> refs/remotes/origin/main
 static inline uintptr_t
 page2pa(struct Page *page) {

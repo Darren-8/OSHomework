@@ -9,15 +9,21 @@ kern_entry:
     # load pa of boot pgdir
     movl $REALLOC(__boot_pgdir), %eax
 <<<<<<< HEAD
+<<<<<<< HEAD
     movl %eax, %cr3
 
     # enable paging
 =======
+=======
+>>>>>>> refs/remotes/origin/main
     # cr3为页目录基址寄存器
     movl %eax, %cr3
 
     # enable paging
     # cr0是控制寄存器，此处是取消写保护
+<<<<<<< HEAD
+>>>>>>> refs/remotes/origin/main
+=======
 >>>>>>> refs/remotes/origin/main
     movl %cr0, %eax
     orl $(CR0_PE | CR0_PG | CR0_AM | CR0_WP | CR0_NE | CR0_TS | CR0_EM | CR0_MP), %eax
@@ -27,6 +33,10 @@ kern_entry:
     # update eip
     # now, eip = 0x1.....
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+    # 将next的地址赋给寄存器
+>>>>>>> refs/remotes/origin/main
 =======
     # 将next的地址赋给寄存器
 >>>>>>> refs/remotes/origin/main

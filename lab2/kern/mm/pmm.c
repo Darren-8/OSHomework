@@ -43,12 +43,18 @@ size_t npage = 0;
 
 // virtual address of boot-time page directory
 <<<<<<< HEAD
+<<<<<<< HEAD
 // 这个来自于entry.S
 extern pde_t __boot_pgdir;
 pde_t* boot_pgdir = &__boot_pgdir;
 =======
 extern pde_t __boot_pgdir;
 pde_t *boot_pgdir = &__boot_pgdir;
+>>>>>>> refs/remotes/origin/main
+=======
+// 这个来自于entry.S
+extern pde_t __boot_pgdir;
+pde_t* boot_pgdir = &__boot_pgdir;
 >>>>>>> refs/remotes/origin/main
 // physical address of boot-time page directory
 uintptr_t boot_cr3;
@@ -209,6 +215,9 @@ nr_free_pages(void) {
 static void
 page_init(void) {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/main
     /*
     * 目标: 根据探测得到的物理空间分布,初始化 pages 表格.
     * 1. 确定 pages 基址. pages是end上面的第一个页表项(struct Page)的指针,这意味着从此就已经突破了内核文件本身的内存空间,开始动态分配内存.
@@ -220,6 +229,9 @@ page_init(void) {
     */
 
     // 首先获得利用BIOS的15h中断获得的内存信息，具体可见bootasm.S
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/main
 =======
 >>>>>>> refs/remotes/origin/main
     struct e820map *memmap = (struct e820map *)(0x8000 + KERNBASE);
@@ -245,11 +257,17 @@ page_init(void) {
     extern char end[];
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     // 对内存进行分块，获得分得的块的数量，即计算出需要管理的块的数量，该物理内存至多允许npage个块
     npage = maxpa / PGSIZE;
     // 获得ucore的加载结束地址所在块的下一个块，ROUNDUP向上取整
 =======
     npage = maxpa / PGSIZE;
+>>>>>>> refs/remotes/origin/main
+=======
+    // 对内存进行分块，获得分得的块的数量，即计算出需要管理的块的数量，该物理内存至多允许npage个块
+    npage = maxpa / PGSIZE;
+    // 获得ucore的加载结束地址所在块的下一个块，ROUNDUP向上取整
 >>>>>>> refs/remotes/origin/main
     pages = (struct Page *)ROUNDUP((void *)end, PGSIZE);
 
@@ -264,9 +282,14 @@ page_init(void) {
         uint64_t begin = memmap->map[i].addr, end = begin + memmap->map[i].size;
         if (memmap->map[i].type == E820_ARM) {
 <<<<<<< HEAD
+<<<<<<< HEAD
             // 边界检查，防止溢出
             // 满足 begin < freemem && end > KMEMSIZE 的内存都是非可用的
 =======
+>>>>>>> refs/remotes/origin/main
+=======
+            // 边界检查，防止溢出
+            // 满足 begin < freemem && end > KMEMSIZE 的内存都是非可用的
 >>>>>>> refs/remotes/origin/main
             if (begin < freemem) {
                 begin = freemem;
@@ -279,9 +302,14 @@ page_init(void) {
                 end = ROUNDDOWN(end, PGSIZE);
                 if (begin < end) {
 <<<<<<< HEAD
+<<<<<<< HEAD
                     // 用于将page串入管理链表
                     // initmemmap将一块连续的空闲地址加入freelist
 =======
+>>>>>>> refs/remotes/origin/main
+=======
+                    // 用于将page串入管理链表
+                    // initmemmap将一块连续的空闲地址加入freelist
 >>>>>>> refs/remotes/origin/main
                     init_memmap(pa2page(begin), (end - begin) / PGSIZE);
                 }
@@ -313,9 +341,14 @@ page_init(void) {
 static void
 boot_map_segment(pde_t *pgdir, uintptr_t la, size_t size, uintptr_t pa, uint32_t perm) {
 <<<<<<< HEAD
+<<<<<<< HEAD
     // 检查是否对齐
     // 对于每一个物理页，写一个对应页表
 =======
+>>>>>>> refs/remotes/origin/main
+=======
+    // 检查是否对齐
+    // 对于每一个物理页，写一个对应页表
 >>>>>>> refs/remotes/origin/main
     assert(PGOFF(la) == PGOFF(pa));
     size_t n = ROUNDUP(size + PGOFF(la), PGSIZE) / PGSIZE;
@@ -346,10 +379,15 @@ boot_alloc_page(void) {
 void
 pmm_init(void) {
 <<<<<<< HEAD
+<<<<<<< HEAD
     //现在单独维护一个变量boot_cr3 即内核一级页表基址.这个boot_pgdir就是我们刚刚开启分页时所采用的那个一级页表
     //注意，此时只有一个一级页表项，一次只能维护VA:[KERNBASE,KERNBASE+4M)~PA:[0,4M)的页映射
 =======
     // We've already enabled paging
+>>>>>>> refs/remotes/origin/main
+=======
+    //现在单独维护一个变量boot_cr3 即内核一级页表基址.这个boot_pgdir就是我们刚刚开启分页时所采用的那个一级页表
+    //注意，此时只有一个一级页表项，一次只能维护VA:[KERNBASE,KERNBASE+4M)~PA:[0,4M)的页映射
 >>>>>>> refs/remotes/origin/main
     boot_cr3 = PADDR(boot_pgdir);
 
@@ -359,15 +397,23 @@ pmm_init(void) {
     //Then pmm can alloc/free the physical memory. 
     //Now the first_fit/best_fit/worst_fit/buddy_system pmm are available.
 <<<<<<< HEAD
+<<<<<<< HEAD
     // 初始化用于空闲内存管理的链表
     // 初始化物理内存分配器,之后即可使用其 alloc/free pages 的功能
 =======
+>>>>>>> refs/remotes/origin/main
+=======
+    // 初始化用于空闲内存管理的链表
+    // 初始化物理内存分配器,之后即可使用其 alloc/free pages 的功能
 >>>>>>> refs/remotes/origin/main
     init_pmm_manager();
 
     // detect physical memory space, reserve already used memory,
     // then use pmm->init_memmap to create free page list
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/main
     // 对内存中每个块的块头部分进行初始化
     // 探测物理内存分布,初始化 pages, 然后调用 pmm->init_memmap 来初始化 freelist
     page_init();
@@ -378,12 +424,15 @@ pmm_init(void) {
     check_alloc_page();
 
     //测试用函数
+<<<<<<< HEAD
 =======
     page_init();
 
     //use pmm->check to verify the correctness of the alloc/free function in a pmm
     check_alloc_page();
 
+>>>>>>> refs/remotes/origin/main
+=======
 >>>>>>> refs/remotes/origin/main
     check_pgdir();
 
@@ -394,6 +443,9 @@ pmm_init(void) {
     // recursively insert boot_pgdir in itself
     // to form a virtual page table at virtual address VPT
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/main
     // PDX用于取前10位，此处是将二级页表本身作为一个一级页表当成自己的页表项
     // 自映射的实现
     boot_pgdir[PDX(VPT)] = PADDR(boot_pgdir) | PTE_P | PTE_W;
@@ -413,6 +465,7 @@ pmm_init(void) {
     // 到目前为止还是用的 bootloader 的GDT.
     // 现在更新为内核的 GDT,把内存平铺, virtual_addr 0 ~ 4G = linear_addr 0 ~ 4G.
     // 然后设置内存中的TSS即 ts, ss:esp, 设置 gdt 中的 TSS指向&ts, 最后设置 TR 寄存器的值为 gdt 中 TSS 项索引.
+<<<<<<< HEAD
 =======
     boot_pgdir[PDX(VPT)] = PADDR(boot_pgdir) | PTE_P | PTE_W;
 
@@ -424,6 +477,8 @@ pmm_init(void) {
     // we should reload gdt (second time, the last time) to get user segments and the TSS
     // map virtual_addr 0 ~ 4G = linear_addr 0 ~ 4G
     // then set kernel stack (ss:esp) in TSS, setup TSS in gdt, load TSS
+>>>>>>> refs/remotes/origin/main
+=======
 >>>>>>> refs/remotes/origin/main
     gdt_init();
 
@@ -446,6 +501,9 @@ pmm_init(void) {
 pte_t *
 get_pte(pde_t *pgdir, uintptr_t la, bool create) {
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/main
     // 根据la映射到pdeptr对应的位置上
     // pdeptr == 页目录项的指针
     pde_t * pdeptr = pgdir + PDX(la);
@@ -469,6 +527,9 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
         return (pte_t *)KADDR(PTE_ADDR((*pdeptr))) + PTX(la);
     }
     else return NULL;
+<<<<<<< HEAD
+=======
+>>>>>>> refs/remotes/origin/main
 =======
 >>>>>>> refs/remotes/origin/main
     /* LAB2 EXERCISE 2: YOUR CODE
@@ -646,8 +707,12 @@ check_pgdir(void) {
     assert(page_ref(p2) == 0);
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     
 =======
+>>>>>>> refs/remotes/origin/main
+=======
+    
 >>>>>>> refs/remotes/origin/main
     assert(page_ref(pde2page(boot_pgdir[0])) == 1);
     free_page(pde2page(boot_pgdir[0]));
@@ -685,9 +750,13 @@ check_boot_pgdir(void) {
 
     free_page(p);
 <<<<<<< HEAD
+<<<<<<< HEAD
     free_page(pde2page(PDE_ADDR(boot_pgdir[0])));
 =======
     free_page(pde2page(boot_pgdir[0]));
+>>>>>>> refs/remotes/origin/main
+=======
+    free_page(pde2page(PDE_ADDR(boot_pgdir[0])));
 >>>>>>> refs/remotes/origin/main
     boot_pgdir[0] = 0;
 
