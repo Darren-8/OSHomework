@@ -490,6 +490,8 @@ tlb_invalidate(pde_t *pgdir, uintptr_t la) {
 // pgdir_alloc_page - call alloc_page & page_insert functions to 
 //                  - allocate a page size memory & setup an addr map
 //                  - pa<->la with linear address la and the PDT pgdir
+// 调用alloc_page和page_insert去分配一个page大小的内存并用线性地址la和pgdir设立一个pysical address
+// 到linear address的一一映射。
 struct Page *
 pgdir_alloc_page(pde_t *pgdir, uintptr_t la, uint32_t perm) {
     struct Page *page = alloc_page();
@@ -661,6 +663,7 @@ print_pgdir(void) {
     cprintf("--------------------- END ---------------------\n");
 }
 
+// kmalloc等同于malloc，kernel级别的malloc，参数size表示申请的空间大小
 void *
 kmalloc(size_t n) {
     void * ptr=NULL;
@@ -674,6 +677,7 @@ kmalloc(size_t n) {
     return ptr;
 }
 
+// kfree是kernel级别的free
 void 
 kfree(void *ptr, size_t n) {
     assert(n > 0 && n < 1024*0124);

@@ -40,6 +40,7 @@ static void check_pgfault(void);
 
 // mm_create -  alloc a mm_struct & initialize it.
 // 创建一个 mm 但是分得的内存是整页整页大小的内存，例如如果mm的大小只有48B，则最终返回指针所指向的内存块实际为4096B
+// 
 struct mm_struct *
 mm_create(void) {
     struct mm_struct *mm = kmalloc(sizeof(struct mm_struct));
@@ -50,7 +51,8 @@ mm_create(void) {
         mm->pgdir = NULL;
         mm->map_count = 0;
 
-        // 如果内存交换硬件和程序初始化完成，表明正在测试swap部分，则将mm的swap功能部分初始化
+        // 如果内存交换的硬件是正常的，我们将mm初始化，前面我们初始化了部分参数，这里我们初始化pra_list，将
+        // pra_list_head的地址放到sm_priv里(swap manager)；否则如果不正常，我们不能正常交换，则priv为空
         if (swap_init_ok) swap_init_mm(mm);
         else mm->sm_priv = NULL;
     }
@@ -58,6 +60,7 @@ mm_create(void) {
 }
 
 // vma_create - alloc a vma_struct & initialize it. (addr range: vm_start~vm_end)
+// 创建一个vam_struct
 struct vma_struct *
 vma_create(uintptr_t vm_start, uintptr_t vm_end, uint32_t vm_flags) {
     struct vma_struct *vma = kmalloc(sizeof(struct vma_struct));
@@ -257,6 +260,7 @@ check_vma_struct(void) {
     cprintf("check_vma_struct() succeeded!\n");
 }
 
+// check_mm_struct是所有的合法的虚拟内存空间的集合
 struct mm_struct *check_mm_struct;
 
 // check_pgfault - check correctness of pgfault handler

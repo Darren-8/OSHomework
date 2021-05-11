@@ -30,7 +30,10 @@ list_entry_t pra_list_head;
  * (2) _fifo_init_mm: init pra_list_head and let  mm->sm_priv point to the addr of pra_list_head.
  *              Now, From the memory control struct mm_struct, we can access FIFO PRA
  */
-// 对mm的换入队列进行初始化
+// pra=page replacement algorithm, pra_list_head表示内存换入换出头，队列头指向内存中驻留时间最久的页，队列尾指向最
+// 近被调入内存的页。这样需要淘汰页时，从队列头很容易查找到需要淘汰的页。
+// 我们用pra_list构建一个FIFO队列，如上所述，用pra_list_head指向队列头，而mm中的私有数据sm_priv (swap manager)
+// 则指向了pra_list_head的地址，可借此访问pra_list.
 static int
 _fifo_init_mm(struct mm_struct *mm)
 {     

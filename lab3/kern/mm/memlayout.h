@@ -76,6 +76,13 @@
 
 typedef uintptr_t pte_t;
 typedef uintptr_t pde_t;
+
+/*
+* 操作系统如何表示一个页被置换到了硬盘上呢？ucore充分利用了页表中的PTE来表示这种情况：当一个PTE用来描述一般意义上的物理页时，显然它应该维护各种权限和映射关系，
+* 以及应该有PTE_P标记；但当它用来描述一个被置换出去的物理页时，它被用来维护该物理页与 swap 磁盘上扇区的映射关系，并且该 PTE 不应该由 MMU 将它解释成物理页映射
+* (即没有 PTE_P 标记)，与此同时对应的权限则交由 mm_struct 来维护，当对位于该页的内存地址进行访问的时候，必然导致 page fault，然后ucore能够根据 PTE 描述的 swap 项
+* 将相应的物理页重新建立起来，并根据虚存所描述的权限重新设置好 PTE 使得内存访问能够继续正常进行。
+*/
 typedef pte_t swap_entry_t; //the pte can also be a swap entry
 
 // some constants for bios interrupt 15h AX = 0xE820
