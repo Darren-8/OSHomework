@@ -16,9 +16,12 @@
 // the max access seq number
 #define MAX_SEQ_NO 10
 
+static struct swap_manager* sm;
 static struct swap_manager *sm;
 size_t max_swap_offset;
 
+// 此处用于标识内存交换的硬件和程序是否可用并且初始化完成，如果初始化完成将此设置为1。置1也表明正在检查swap部分的代码。
+// swap_init_ok表明该内存是否可以用于交换。
 volatile int swap_init_ok = 0;
 
 unsigned int swap_page[CHECK_VALID_VIR_PAGE_NUM];
@@ -30,6 +33,7 @@ static void check_swap(void);
 int
 swap_init(void)
 {
+     // 进行设备初始化，检查swap磁盘能不能用
      swapfs_init();
 
      if (!(1024 <= max_swap_offset && max_swap_offset < MAX_SWAP_OFFSET_LIMIT))
@@ -37,7 +41,7 @@ swap_init(void)
           panic("bad max_swap_offset %08x.\n", max_swap_offset);
      }
      
-
+     
      sm = &swap_manager_fifo;
      int r = sm->init();
      
@@ -77,6 +81,7 @@ swap_set_unswappable(struct mm_struct *mm, uintptr_t addr)
 
 volatile unsigned int swap_out_num=0;
 
+// 换出函数，先挑出待换出的页victim，把victim对应的pte设置一下(Present位置零)，再把这个页free掉
 int
 swap_out(struct mm_struct *mm, int n, int in_tick)
 {
@@ -116,9 +121,13 @@ swap_out(struct mm_struct *mm, int n, int in_tick)
      return i;
 }
 
+
+// 从mm_struct中为addr所代表的已经被换出的内存块申请一块物理内存，将被换出的内存块从磁盘中读回来，放到
+// 我们申请的内存的中去，再返回物理内存页对应的Page地址。
 int
 swap_in(struct mm_struct *mm, uintptr_t addr, struct Page **ptr_result)
 {
+     // 申请一块内存块用于读入操作
      struct Page *result = alloc_page();
      assert(result!=NULL);
 
@@ -126,11 +135,13 @@ swap_in(struct mm_struct *mm, uintptr_t addr, struct Page **ptr_result)
      // cprintf("SWAP: load ptep %x swap entry %d to vaddr 0x%08x, page %x, No %d\n", ptep, (*ptep)>>8, addr, result, (result-pages));
     
      int r;
+     // 从硬盘中读取内存块
      if ((r = swapfs_read((*ptep), result)) != 0)
      {
         assert(r!=0);
      }
      cprintf("swap_in: load disk swap entry %d with swap_page in vadr 0x%x\n", (*ptep)>>8, addr);
+     // 将读入的内存块所在的内存位置返回
      *ptr_result=result;
      return 0;
 }

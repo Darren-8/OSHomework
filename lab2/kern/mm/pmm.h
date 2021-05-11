@@ -78,13 +78,15 @@ page2ppn(struct Page *page) {
     return page - pages;
 }
 
+<<<<<<< HEAD
 // 每个struct Page都与一个物理内存页一一对应，可用这个把一个struct Page转化为其所对应的物理内存页的首地址
+=======
+>>>>>>> refs/remotes/origin/main
 static inline uintptr_t
 page2pa(struct Page *page) {
     return page2ppn(page) << PGSHIFT;
 }
 
-// 返回实际内存块对应的Page位置，此处加上了KEMBASE
 static inline struct Page *
 pa2page(uintptr_t pa) {
     if (PPN(pa) >= npage) {

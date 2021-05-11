@@ -40,7 +40,8 @@ struct Page *pages;
 size_t npage = 0;
 
 // virtual address of boot-time page directory
-pde_t *boot_pgdir = NULL;
+extern pde_t __boot_pgdir;
+pde_t *boot_pgdir = &__boot_pgdir;
 // physical address of boot-time page directory
 uintptr_t boot_cr3;
 
@@ -252,17 +253,6 @@ page_init(void) {
     }
 }
 
-static void
-enable_paging(void) {
-    lcr3(boot_cr3);
-
-    // turn on paging
-    uint32_t cr0 = rcr0();
-    cr0 |= CR0_PE | CR0_PG | CR0_AM | CR0_WP | CR0_NE | CR0_TS | CR0_EM | CR0_MP;
-    cr0 &= ~(CR0_TS | CR0_EM);
-    lcr0(cr0);
-}
-
 //boot_map_segment - setup&enable the paging mechanism
 // parameters
 //  la:   linear address of this memory need to map (after x86 segment map)
@@ -298,6 +288,9 @@ boot_alloc_page(void) {
 //         - check the correctness of pmm & paging mechanism, print PDT&PT
 void
 pmm_init(void) {
+    // We've already enabled paging
+    boot_cr3 = PADDR(boot_pgdir);
+
     //We need to alloc/free the physical memory (granularity is 4KB or other size). 
     //So a framework of physical memory manager (struct pmm_manager)is defined in pmm.h
     //First we should init a physical memory manager(pmm) based on the framework.
@@ -312,11 +305,6 @@ pmm_init(void) {
     //use pmm->check to verify the correctness of the alloc/free function in a pmm
     check_alloc_page();
 
-    // create boot_pgdir, an initial page directory(Page Directory Table, PDT)
-    boot_pgdir = boot_alloc_page();
-    memset(boot_pgdir, 0, PGSIZE);
-    boot_cr3 = PADDR(boot_pgdir);
-
     check_pgdir();
 
     static_assert(KERNBASE % PTSIZE == 0 && KERNTOP % PTSIZE == 0);
@@ -326,23 +314,14 @@ pmm_init(void) {
     boot_pgdir[PDX(VPT)] = PADDR(boot_pgdir) | PTE_P | PTE_W;
 
     // map all physical memory to linear memory with base linear addr KERNBASE
-    //linear_addr KERNBASE~KERNBASE+KMEMSIZE = phy_addr 0~KMEMSIZE
-    //But shouldn't use this map until enable_paging() & gdt_init() finished.
+    // linear_addr KERNBASE ~ KERNBASE + KMEMSIZE = phy_addr 0 ~ KMEMSIZE
     boot_map_segment(boot_pgdir, KERNBASE, KMEMSIZE, 0, PTE_W);
 
-    //temporary map: 
-    //virtual_addr 3G~3G+4M = linear_addr 0~4M = linear_addr 3G~3G+4M = phy_addr 0~4M     
-    boot_pgdir[0] = boot_pgdir[PDX(KERNBASE)];
-
-    enable_paging();
-
-    //reload gdt(third time,the last time) to map all physical memory
-    //virtual_addr 0~4G=liear_addr 0~4G
-    //then set kernel stack(ss:esp) in TSS, setup TSS in gdt, load TSS
+    // Since we are using bootloader's GDT,
+    // we should reload gdt (second time, the last time) to get user segments and the TSS
+    // map virtual_addr 0 ~ 4G = linear_addr 0 ~ 4G
+    // then set kernel stack (ss:esp) in TSS, setup TSS in gdt, load TSS
     gdt_init();
-
-    //disable the map of virtual_addr 0~4M
-    boot_pgdir[0] = 0;
 
     //now the basic virtual memory map(see memalyout.h) is established.
     //check the correctness of the basic virtual memory map.
@@ -406,7 +385,7 @@ get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store) {
         *ptep_store = ptep;
     }
     if (ptep != NULL && *ptep & PTE_P) {
-        return pa2page(*ptep);
+        return pte2page(*ptep);
     }
     return NULL;
 }
@@ -531,7 +510,7 @@ check_pgdir(void) {
 
     pte_t *ptep;
     assert((ptep = get_pte(boot_pgdir, 0x0, 0)) != NULL);
-    assert(pa2page(*ptep) == p1);
+    assert(pte2page(*ptep) == p1);
     assert(page_ref(p1) == 1);
 
     ptep = &((pte_t *)KADDR(PDE_ADDR(boot_pgdir[0])))[1];
@@ -549,7 +528,7 @@ check_pgdir(void) {
     assert(page_ref(p1) == 2);
     assert(page_ref(p2) == 0);
     assert((ptep = get_pte(boot_pgdir, PGSIZE, 0)) != NULL);
-    assert(pa2page(*ptep) == p1);
+    assert(pte2page(*ptep) == p1);
     assert((*ptep & PTE_U) == 0);
 
     page_remove(boot_pgdir, 0x0);
@@ -560,8 +539,8 @@ check_pgdir(void) {
     assert(page_ref(p1) == 0);
     assert(page_ref(p2) == 0);
 
-    assert(page_ref(pa2page(boot_pgdir[0])) == 1);
-    free_page(pa2page(boot_pgdir[0]));
+    assert(page_ref(pde2page(boot_pgdir[0])) == 1);
+    free_page(pde2page(boot_pgdir[0]));
     boot_pgdir[0] = 0;
 
     cprintf("check_pgdir() succeeded!\n");
@@ -595,7 +574,7 @@ check_boot_pgdir(void) {
     assert(strlen((const char *)0x100) == 0);
 
     free_page(p);
-    free_page(pa2page(PDE_ADDR(boot_pgdir[0])));
+    free_page(pde2page(boot_pgdir[0]));
     boot_pgdir[0] = 0;
 
     cprintf("check_boot_pgdir() succeeded!\n");

@@ -1,4 +1,4 @@
-#ifndef __KERN_MM_SWAP_H__
+﻿#ifndef __KERN_MM_SWAP_H__
 #define __KERN_MM_SWAP_H__
 
 #include <defs.h>
@@ -7,6 +7,13 @@
 #include <vmm.h>
 
 /* *
+* 如果一个页（4KB/页）被置换到了硬盘某8个扇区（0.5KB/扇区），该PTE的最低位--present位应该为0 （即 PTE_P 标记为空，表示虚实地址映射关系不存在），
+* 接下来的7位暂时保留，可以用作各种扩展；而原来用来表示页帧号的高24位地址，恰好可以用来表示此页在硬盘上的起始扇区的位置（其从第几个扇区开始）。为了在页
+* 表项中区别 0 和 swap 分区的映射(因为对于一个页表项，如果其值为全零，即为NULL，表示该页表不存在)，将 swap 分区的一个 page 空出来不用，也就是说一个高24位不为0，而最低位为0的PTE表示了一个放在硬盘上的页的起始扇区号
+*（见swap.h中对swap_entry_t的描述）：
+* 
+* offset即相对于首扇区(0x00000000对应扇区-起始扇区号)的偏移
+* 
  * swap_entry_t
  * --------------------------------------------
  * |         offset        |   reserved   | 0 |
@@ -21,6 +28,9 @@ extern size_t max_swap_offset;
 /* *
  * swap_offset - takes a swap_entry (saved in pte), and returns
  * the corresponding offset in swap mem_map.
+ * pte在物理页存在时表示物理页，当物理页被置换出去时表示对应的swap扇区，结构如上
+ * pte在物理页正常存在时前24位表示的是page frame号，现在表示扇区号。
+ * 
  * */
 #define swap_offset(entry) ({                                       \
                size_t __offset = (entry >> 8);                        \

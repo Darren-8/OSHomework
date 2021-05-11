@@ -11,6 +11,7 @@ struct mm_struct;
 
 // the virtual continuous memory area(vma), [vm_start, vm_end), 
 // addr belong to a vma means  vma.vm_start<= addr <vma.vm_end 
+// vma是一片连续的虚拟内存空间，当然，其属于某一个pgdir，即一个不会超过4MB
 struct vma_struct {
     struct mm_struct *vm_mm; // the set of vma using the same PDT 
     uintptr_t vm_start;      // start addr of vma      
@@ -26,12 +27,15 @@ struct vma_struct {
 #define VM_WRITE                0x00000002
 #define VM_EXEC                 0x00000004
 
-// the control struct for a set of vma using the same PDT
+/* the control struct for a set of vma using the same PDT
+ * mm是一片连续的虚拟内存空间，拥有同一个pgdir，的memory manager
+ */
 struct mm_struct {
     list_entry_t mmap_list;        // linear list link which sorted by start addr of vma
     struct vma_struct *mmap_cache; // current accessed vma, used for speed purpose
     pde_t *pgdir;                  // the PDT of these vma
     int map_count;                 // the count of these vma
+    // 记录在内存内的内存块的从磁盘中换入的顺序，即内存换入队列
     void *sm_priv;                   // the private data for swap manager
 };
 

@@ -31,22 +31,28 @@ kern_init(void) {
 
     grade_backtrace();
 
+    // 内存管理器加载，和 Lab2 相同
     pmm_init();                 // init physical memory management
 
+    // 设置中断控制器，和 Lab1 相同
     pic_init();                 // init interrupt controller
     idt_init();                 // init interrupt descriptor table
 
+    // 检查mm和vma相关函数是否正常
     vmm_init();                 // init virtual memory management
 
+    // 加载硬件
     ide_init();                 // init ide devices
+    // 检查内存换入换出算法正确性
     swap_init();                // init swap
 
+    // 以下为 Lab1 内容
     clock_init();               // init clock interrupt
     intr_enable();              // enable irq interrupt
 
     //LAB1: CAHLLENGE 1 If you try to do it, uncomment lab1_switch_test()
     // user/kernel mode switch test
-    //lab1_switch_test();
+    // lab1_switch_test();
 
     /* do nothing */
     while (1);
@@ -93,11 +99,24 @@ lab1_print_cur_status(void) {
 static void
 lab1_switch_to_user(void) {
     //LAB1 CHALLENGE 1 : TODO
+    asm volatile (
+	    "sub $0x8, %%esp \n"
+	    "int %0 \n"
+	    "movl %%ebp, %%esp"
+	    : 
+	    : "i"(T_SWITCH_TOU)
+	);
 }
 
 static void
 lab1_switch_to_kernel(void) {
     //LAB1 CHALLENGE 1 :  TODO
+	asm volatile (
+	    "int %0 \n"
+	    "movl %%ebp, %%esp \n"
+	    : 
+	    : "i"(T_SWITCH_TOK)
+	);
 }
 
 static void

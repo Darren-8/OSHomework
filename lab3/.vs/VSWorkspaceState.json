@@ -1,0 +1,14 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\kern",
+    "\\kern\\debug",
+    "\\kern\\driver",
+    "\\kern\\fs",
+    "\\kern\\init",
+    "\\kern\\mm",
+    "\\kern\\trap"
+  ],
+  "SelectedNode": "\\kern\\mm\\swap_fifo.c",
+  "PreviewInSolutionExplorer": false
+}
