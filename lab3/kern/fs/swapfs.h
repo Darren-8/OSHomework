@@ -7,7 +7,7 @@
 //初始化磁盘
 void swapfs_init(void);
 
-//从磁盘上读内存业
+//从磁盘上读内存页
 int swapfs_read(swap_entry_t entry, struct Page *page);
 
 //把内存页写到磁盘上

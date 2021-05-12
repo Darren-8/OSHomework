@@ -1,6 +1,7 @@
 #include <swap.h>
 #include <swapfs.h>
 #include <swap_fifo.h>
+#include <swap_clock.h>
 #include <stdio.h>
 #include <string.h>
 #include <memlayout.h>

@@ -1,3 +1,4 @@
+#include <defs.h>
 #include <x86.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,23 +11,18 @@
  * PTE_P 0x001 在内存中/不在内存中
  * PTE_A 0x020 访问位，被读过/未被读过
  * PTE_D 0x040 修改位，被写过/未被写过
- * GET_DIRTY_FLAG和GET_ACCESSED_FLAG用于取得相应位的值
- * CLEAR_ACCESSED_FLAG用于清除访问位
 */
-#define GET_LIST_ENTRY_PTE(pgdir, le)  (get_pte((pgdir), le2page((le), pra_page_link)->pra_vaddr, 0))
-#define GET_DIRTY_FLAG(pgdir, le)      (*GET_LIST_ENTRY_PTE((pgdir), (le)) & PTE_D)
-#define GET_ACCESSED_FLAG(pgdir, le)   (*GET_LIST_ENTRY_PTE((pgdir), (le)) & PTE_A)
-#define CLEAR_ACCESSED_FLAG(pgdir, le) do {\
-    struct Page *page = le2page((le), pra_page_link);\
-    pte_t *ptep = get_pte((pgdir), page->pra_vaddr, 0);\
-    *ptep = *ptep & ~PTE_A;\
-    tlb_invalidate((pgdir), page->pra_vaddr);\
-} while (0)
+
+list_entry_t list_head; // XII
+list_entry_t *pointer; // 时钟指针
+bool full; // 是否已经装满
 
 static int
 _clock_init_mm(struct mm_struct *mm)
-{     
-    mm->sm_priv = NULL;
+{
+    list_init(&list_head);
+    pointer = mm->sm_priv = &list_head;
+    full = 0;
     return 0;
 }
 
@@ -38,18 +34,13 @@ _clock_init_mm(struct mm_struct *mm)
 static int
 _clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, int swap_in)
 {
+    if (full) return 0;
     // 头结点和待插入节点
-    list_entry_t *head=(list_entry_t*) mm->sm_priv;
-    list_entry_t *entry=&(page->pra_page_link);
-    assert(entry != NULL);
-
+    list_entry_t* head = (list_entry_t*) (mm->sm_priv);
+    list_entry_t* entry = &(page->pra_page_link);
+    assert(entry != NULL && pointer != NULL);
     // 因为是循环链表，直接插在头结点之前
-    if (head == NULL) {
-        list_init(entry);
-        mm->sm_priv = entry;
-    } else {
-        list_add_before(head, entry);
-    }
+    list_add_before(head, entry);
     return 0;
 }
 
@@ -64,127 +55,110 @@ _clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, in
 static int
 _clock_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tick)
 {
-    list_entry_t *head=(list_entry_t*) mm->sm_priv;
-    assert(head != NULL);
-    assert(in_tick==0);
-
-    list_entry_t *selected = NULL, *p = head;
-    // 遍历链表，找到第一个 <0,0>
-    do {
-        if (GET_ACCESSED_FLAG(mm->pgdir, p) == 0 && GET_DIRTY_FLAG(mm->pgdir, p) == 0) {
-            selected = p;
-            break;
-        }
-        p = list_next(p);
-    } while (p != head);
-
-    // 遍历链表，找到第一个 <0,1>，设为 <0,0>
-    if (selected == NULL)
-    {
-        do {
-            if (GET_ACCESSED_FLAG(mm->pgdir, p) == 0 && GET_DIRTY_FLAG(mm->pgdir, p)) {
-                selected = p;
-                break;
-            }
-            CLEAR_ACCESSED_FLAG(mm->pgdir, p);
-            p = list_next(p);
-        } while (p != head);
-    }
-
-    // 遍历链表，找到第一个 <0,0>
-    if (selected == NULL)
-    {
-        do {
-            if (GET_ACCESSED_FLAG(mm->pgdir, p) == 0 && GET_DIRTY_FLAG(mm->pgdir, p) == 0) {
-                selected = p;
-                break;
-            }
-            p = list_next(p);
-        } while (p != head);
-    }
-
-    // 遍历链表，找到第一个 <0,1>
-    if (selected == NULL)
-    {
-        do {
-            if (GET_ACCESSED_FLAG(mm->pgdir, p) == 0 && GET_DIRTY_FLAG(mm->pgdir, p)) {
-                selected = p;
-                break;
-            }
-            p = list_next(p);
-        } while (p != head);
-    }
+    full = 1;
+    assert(in_tick == 0);
+    list_entry_t *head = mm->sm_priv, *next;
+    assert(pointer != NULL);
+    if (pointer == head) pointer = list_next(pointer);
     
-    // 把换掉的页逐出
-    head = selected;
-    if (list_empty(head)) {
-        mm->sm_priv = NULL;
-    } else {
-        mm->sm_priv = list_next(head);
-        list_del(head);
+    // 选择逐出页面
+    for (; ; pointer = list_next(pointer)) {
+        if (pointer == head) continue;
+        struct Page* page = le2page(pointer, pra_page_link);
+        uintptr_t va = page->pra_vaddr;
+        pte_t *ptep = get_pte(mm->pgdir, va, 0);
+        assert(*ptep & PTE_P);
+
+        // 获取A和D并打印
+        uintptr_t A = *ptep & PTE_A, D = *ptep & PTE_D;
+        cprintf("visit vaddr: 0x%08x %c%c\n", page->pra_vaddr, A ? 'A' : '-', D ? 'D' : '-');
+        if (A == 0 && D == 0) { // 00, 替换
+            *ptr_page = page;
+            break;
+        } else {
+            if (A == 0) { // 01 -> 00
+                // (va / PGSIZE + 1) << 8 是对应PTE
+                swapfs_write((va / PGSIZE + 1) << 8, page);
+                cprintf("write page vaddr 0x%x to swap %d\n", va, va / PGSIZE + 1);
+                *ptep &= ~PTE_D;
+            } else { // 10, 11 -> 00, 01
+                *ptep &= ~PTE_A;
+            }
+            tlb_invalidate(mm->pgdir, va);
+        }
     }
-    *ptr_page = le2page(head, pra_page_link);
+    pointer = list_next(pointer);
     return 0;
 }
 
+/**
+ * 以下样例来自课程PPT
+ * 在此之前，check_content_set(void)里已经有了
+ * 0x1000 : 0x0a
+ * 0x1010 : 0x0a
+ * 0x2000 : 0x0b
+ * 0x2010 : 0x0b
+ * 0x3000 : 0x0c
+ * 0x3010 : 0x0c
+ * 0x4000 : 0x0d
+ * 0x4010 : 0x0d
+ * 并为它们产生了四次缺页中断
+*/
 static int
 _clock_check_swap(void) {
-    cprintf("write Virt Page c in fifo_check_swap\n");
-    *(unsigned char *)0x3000 = 0x0c;
-    assert(pgfault_num==4);
-    cprintf("write Virt Page a in fifo_check_swap\n");
-    *(unsigned char *)0x1000 = 0x0a;
-    assert(pgfault_num==4);
-    cprintf("write Virt Page d in fifo_check_swap\n");
-    *(unsigned char *)0x4000 = 0x0d;
-    assert(pgfault_num==4);
-    cprintf("write Virt Page b in fifo_check_swap\n");
-    *(unsigned char *)0x2000 = 0x0b;
-    assert(pgfault_num==4);
-    cprintf("write Virt Page e in fifo_check_swap\n");
-    *(unsigned char *)0x5000 = 0x0e;
-    assert(pgfault_num==5);
-    cprintf("write Virt Page b in fifo_check_swap\n");
-    *(unsigned char *)0x2000 = 0x0b;
-    assert(pgfault_num==5);
-    cprintf("write Virt Page a in fifo_check_swap\n");
-    *(unsigned char *)0x1000 = 0x0a;
-    assert(pgfault_num==6);
-    cprintf("write Virt Page b in fifo_check_swap\n");
-    *(unsigned char *)0x2000 = 0x0b;
-    assert(pgfault_num==6);
-    cprintf("write Virt Page c in fifo_check_swap\n");
-    *(unsigned char *)0x3000 = 0x0c;
-    assert(pgfault_num==7);
-    cprintf("write Virt Page d in fifo_check_swap\n");
-    *(unsigned char *)0x4000 = 0x0d;
-    assert(pgfault_num==8);
-    cprintf("write Virt Page e in fifo_check_swap\n");
-    *(unsigned char *)0x5000 = 0x0e;
-    assert(pgfault_num==9);
-    cprintf("write Virt Page a in fifo_check_swap\n");
-    assert(*(unsigned char *)0x1000 == 0x0a);
-    *(unsigned char *)0x1000 = 0x0a;
-    assert(pgfault_num==9);
-    cprintf("read Virt Page b in fifo_check_swap\n");
-    assert(*(unsigned char *)0x2000 == 0x0b);
-    assert(pgfault_num==10);
-    cprintf("read Virt Page c in fifo_check_swap\n");
-    assert(*(unsigned char *)0x3000 == 0x0c);
-    assert(pgfault_num==11);
-    cprintf("read Virt Page a in fifo_check_swap\n");
-    assert(*(unsigned char *)0x1000 == 0x0a);
-    assert(pgfault_num==12);
-    cprintf("read Virt Page d in fifo_check_swap\n");
-    assert(*(unsigned char *)0x4000 == 0x0d);
-    assert(pgfault_num==13);
-    cprintf("read Virt Page b in fifo_check_swap\n");
-    *(unsigned char *)0x1000 = 0x0a;
-    assert(*(unsigned char *)0x3000 == 0x0c);
-    assert(*(unsigned char *)0x4000 == 0x0d);
-    assert(*(unsigned char *)0x5000 == 0x0e);
-    assert(*(unsigned char *)0x2000 == 0x0b);
-    assert(pgfault_num==14);
+    // 清空所有 AD
+    pde_t *pgdir = KADDR((pde_t*) rcr3());
+    for (int i = 1; i <= 4; i++) {
+        pte_t *ptep = get_pte(pgdir, i * 0x1000, 0);
+        swapfs_write((i * 0x1000 / PGSIZE + 1) << 8, pte2page(*ptep));
+        *ptep &= ~(PTE_A | PTE_D);
+        tlb_invalidate(pgdir, i * 0x1000);
+    }
+    assert(pgfault_num == 4);
+
+    cprintf("read Virt Page c in clock_check_swap\n");  // 1 A b c d
+    assert(*(unsigned char *)0x3000 == 0x0c);           // A 0 0 1 0
+    assert(pgfault_num == 4);                           // D 0 0 0 0
+
+    cprintf("write Virt Page a in clock_check_swap\n"); // 2 A b c d
+    assert(*(unsigned char *)0x1000 == 0x0a);           // A 1 0 1 0
+    *(unsigned char *)0x1000 = 0x0a;                    // D 1 0 0 0
+    assert(pgfault_num == 4);
+
+    cprintf("read Virt Page d in clock_check_swap\n");  // 3 A b c d
+    assert(*(unsigned char *)0x4000 == 0x0d);           // A 1 0 1 1
+    assert(pgfault_num == 4);                           // D 1 0 0 0
+    
+    cprintf("write Virt Page b in clock_check_swap\n"); // 4 A b c d
+    assert(*(unsigned char *)0x2000 == 0x0b);           // A 1 1 1 1
+    *(unsigned char *)0x2000 = 0x0b;                    // D 1 1 0 0
+    assert(pgfault_num == 4);
+    
+    cprintf("read Virt Page e in clock_check_swap\n");  // 5 a b e D
+    unsigned e = *(unsigned char *)0x5000;              // A 0 1 1 0
+    cprintf("e = 0x%04x\n", e);                         // D 0 0 0 0
+    assert(pgfault_num == 5);
+    
+    cprintf("read Virt Page b in clock_check_swap\n");  // 6 a b e D
+    assert(*(unsigned char *)0x2000 == 0x0b);           // A 0 1 1 0
+    assert(pgfault_num == 5);                           // D 0 0 0 0
+    
+    cprintf("write Virt Page a in clock_check_swap\n"); // 7 a b e D
+    assert(*(unsigned char *)0x1000 == 0x0a);           // A 1 1 1 0
+    *(unsigned char *)0x1000 = 0x0a;                    // D 1 0 0 0
+    assert(pgfault_num == 5);
+    
+    cprintf("read Virt Page b in clock_check_swap\n");  // 8 a b e D
+    assert(*(unsigned char *)0x2000 == 0x0b);           // A 1 1 1 0
+    assert(pgfault_num == 5);                           // D 1 0 0 0
+    
+    cprintf("read Virt Page c in clock_check_swap\n");  // 9 A b e c
+    assert(*(unsigned char *)0x3000 == 0x0c);           // A 1 1 1 1
+    assert(pgfault_num == 6);                           // D 1 0 0 0
+    
+    cprintf("read Virt Page d in clock_check_swap\n");  //10 a b E c
+    assert(*(unsigned char *)0x4000 == 0x0d);           // A 0 1 0 0
+    assert(pgfault_num == 7);                           // D 0 0 0 0
     return 0;
 }
 
