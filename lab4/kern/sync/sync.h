@@ -5,6 +5,7 @@
 #include <intr.h>
 #include <mmu.h>
 
+// 关闭终端，EFLAGS的第9位表示终端是否可用，当为1时，表示中断可用，否则不可用
 static inline bool
 __intr_save(void) {
     if (read_eflags() & FL_IF) {
@@ -21,6 +22,7 @@ __intr_restore(bool flag) {
     }
 }
 
+// x的作用是标记当前中断是否已经被关闭，如果已经被关闭，则在restore时不改变中断原关闭状态
 #define local_intr_save(x)      do { x = __intr_save(); } while (0)
 #define local_intr_restore(x)   __intr_restore(x);
 

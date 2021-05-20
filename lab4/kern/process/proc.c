@@ -86,6 +86,18 @@ static struct proc_struct *
 alloc_proc(void) {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
     if (proc != NULL) {
+        proc -> state = PROC_UNINIT;
+        proc -> pid = -1;
+        proc -> runs = 0;
+        proc -> kstack = 0;
+        proc -> need_resched = 0;
+        proc -> parent = NULL;
+        proc -> mm = NULL;
+        memset(&(proc -> context), 0, sizeof(struct context));
+        proc -> tf = NULL;
+        proc -> cr3 = boot_cr3;
+        proc -> flags = 0;
+        memset(proc -> name, 0, PROC_NAME_LEN + 1);
     //LAB4:EXERCISE1 YOUR CODE
     /*
      * below fields in proc_struct need to be initialized
@@ -158,16 +170,22 @@ get_pid(void) {
 
 // proc_run - make process "proc" running on cpu
 // NOTE: before call switch_to, should load  base addr of "proc"'s new PDT
+// 进程调度转换
 void
 proc_run(struct proc_struct *proc) {
     if (proc != current) {
         bool intr_flag;
         struct proc_struct *prev = current, *next = proc;
+        // 保证关闭中断
         local_intr_save(intr_flag);
         {
+            // 将当前进程作为正在运行的进程
             current = proc;
+            // 读取进程中对内存栈位置的记录，设置内存栈的栈顶位置
             load_esp0(next->kstack + KSTACKSIZE);
+            // 加载进程的页目录
             lcr3(next->cr3);
+            // 加载进程的寄存器信息
             switch_to(&(prev->context), &(next->context));
         }
         local_intr_restore(intr_flag);
@@ -206,9 +224,11 @@ find_proc(int pid) {
 // kernel_thread - create a kernel thread using "fn" function
 // NOTE: the contents of temp trapframe tf will be copied to 
 //       proc->tf in do_fork-->copy_thread function
+// 创建内核线程
 int
 kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
     struct trapframe tf;
+    // 设置内核线程的中断帧
     memset(&tf, 0, sizeof(struct trapframe));
     tf.tf_cs = KERNEL_CS;
     tf.tf_ds = tf.tf_es = tf.tf_ss = KERNEL_DS;
@@ -267,10 +287,37 @@ int
 do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     int ret = -E_NO_FREE_PROC;
     struct proc_struct *proc;
+    // 检查进程是否达到最大数量
     if (nr_process >= MAX_PROCESS) {
         goto fork_out;
     }
     ret = -E_NO_MEM;
+    bool state;
+    // 关闭中断
+    local_intr_save(state);
+    // 创建进程
+    proc = alloc_proc();
+    if(!proc) goto fork_out;
+    // 设置父进程，设置pid
+    proc -> parent = current;
+    proc -> pid = get_pid();
+    // 分配一个内核栈
+    setup_kstack(proc);
+    // 复制虚拟内存管理器，因为用不到mm，所以此处实际上不做任何行为
+    copy_mm(clone_flags, proc);
+    // 复制中断帧trapframe和上下文信息context
+    copy_thread(proc, stack, tf);
+    // 加入进程hash
+    hash_proc(proc);
+    // 加入进程链表
+    list_add(&proc_list, &(proc -> list_link));
+    // 唤醒进程，标记这个进程可以被调度后运行
+    wakeup_proc(proc);
+    // 将ret设置成新创建进程的pid
+    ret = proc -> pid;
+    // 恢复中断状态
+    local_intr_restore(state);
+
     //LAB4:EXERCISE2 YOUR CODE
     /*
      * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
@@ -330,24 +377,29 @@ void
 proc_init(void) {
     int i;
 
+    // 初始化进程链表
     list_init(&proc_list);
     for (i = 0; i < HASH_LIST_SIZE; i ++) {
         list_init(hash_list + i);
     }
 
+    // 创建第0号进程
     if ((idleproc = alloc_proc()) == NULL) {
         panic("cannot alloc idleproc.\n");
     }
 
+    // 设置第0号进程
     idleproc->pid = 0;
     idleproc->state = PROC_RUNNABLE;
     idleproc->kstack = (uintptr_t)bootstack;
-    idleproc->need_resched = 1;
+    idleproc->need_resched = 1; // 此处为了保证在之后开启进程调度的时候，第0进程会被调度
     set_proc_name(idleproc, "idle");
     nr_process ++;
 
+    // 设置当前正在运行的进程为第0号进程
     current = idleproc;
 
+    // 创建内核进程
     int pid = kernel_thread(init_main, "Hello world!!", 0);
     if (pid <= 0) {
         panic("create init_main failed.\n");
@@ -364,6 +416,7 @@ proc_init(void) {
 void
 cpu_idle(void) {
     while (1) {
+        // 如果当前正在运行的进程需要进行调度
         if (current->need_resched) {
             schedule();
         }
