@@ -134,12 +134,17 @@ get_proc_name(struct proc_struct *proc) {
 }
 
 // get_pid - alloc a unique pid for process
+// 在一开始分配pid的时候，将会从1到MAX_PID每次递增1产生pid返回，其中MAX_PID是不会被分配的，如果pid过多，已经达到了MAX_PID，
+// 则会在进程链表中寻找杀死进程后留下的pid范围空洞，然后再以此产生pid返回
 static int
 get_pid(void) {
+    // 确保每个进程一定能够分配到一个pid，同时保证在寻找pid空洞的时候一定能够找到pid空洞
     static_assert(MAX_PID > MAX_PROCESS);
     struct proc_struct *proc;
     list_entry_t *list = &proc_list, *le;
+    // last_pid记录着上一次分配出去的pid
     static int next_safe = MAX_PID, last_pid = MAX_PID;
+    // 如果发现是第一次分配进程或者发现pid分配已经饱和，则将1分配出去或者将last_pid赋值为1，进行后续的pid空洞扫描
     if (++ last_pid >= MAX_PID) {
         last_pid = 1;
         goto inside;
@@ -151,8 +156,11 @@ get_pid(void) {
         le = list;
         while ((le = list_next(le)) != list) {
             proc = le2proc(le, list_link);
+            // 若发现last_pid的pid已经被占用，则将last_pid加1，然后接着查看last_pid是否被占用
             if (proc->pid == last_pid) {
+                // 查看last_pid和next_safe标记的范围是否存在pid空洞，如果存在则继续，查看last_pid是否被占用
                 if (++ last_pid >= next_safe) {
+                    // 如果不存在，则说明标记的pid空洞寻找失败，重置各个变量，然后重新遍历链表进行寻找，
                     if (last_pid >= MAX_PID) {
                         last_pid = 1;
                     }
@@ -160,6 +168,7 @@ get_pid(void) {
                     goto repeat;
                 }
             }
+            // 如果发现此处可能有pid范围空洞，则使用next_safe标记这个
             else if (proc->pid > last_pid && next_safe > proc->pid) {
                 next_safe = proc->pid;
             }
@@ -185,7 +194,7 @@ proc_run(struct proc_struct *proc) {
             load_esp0(next->kstack + KSTACKSIZE);
             // 加载进程的页目录
             lcr3(next->cr3);
-            // 加载进程的寄存器信息
+            // 加载进程的寄存器信息，进行上下文切换，具体可以看switch.S
             switch_to(&(prev->context), &(next->context));
         }
         local_intr_restore(intr_flag);
@@ -239,6 +248,7 @@ kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
 }
 
 // setup_kstack - alloc pages with size KSTACKPAGE as process kernel stack
+// 为此进程分配内核栈
 static int
 setup_kstack(struct proc_struct *proc) {
     struct Page *page = alloc_pages(KSTACKPAGE);
@@ -302,7 +312,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     proc -> parent = current;
     proc -> pid = get_pid();
     // 分配一个内核栈
-    setup_kstack(proc);
+    if(setup_kstack(proc) != 0) goto bad_fork_cleanup_proc;
     // 复制虚拟内存管理器，因为用不到mm，所以此处实际上不做任何行为
     copy_mm(clone_flags, proc);
     // 复制中断帧trapframe和上下文信息context
@@ -311,6 +321,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     hash_proc(proc);
     // 加入进程链表
     list_add(&proc_list, &(proc -> list_link));
+    nr_process++;
     // 唤醒进程，标记这个进程可以被调度后运行
     wakeup_proc(proc);
     // 将ret设置成新创建进程的pid
