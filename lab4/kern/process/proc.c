@@ -94,6 +94,9 @@ alloc_proc(void) {
         proc -> parent = NULL;
         proc -> mm = NULL;
         memset(&(proc -> context), 0, sizeof(struct context));
+        // context 按照switch.S的顺序记录了八个 regular registers
+        // EAX 不在内，因为已经被压入栈中不需要再保存
+        // segment registers 也不在内，因为在整个内核的context中是固定的
         proc -> tf = NULL;
         proc -> cr3 = boot_cr3;
         proc -> flags = 0;
