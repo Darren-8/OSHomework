@@ -242,10 +242,13 @@ kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
     struct trapframe tf;
     // 设置内核线程的中断帧
     memset(&tf, 0, sizeof(struct trapframe));
+    // 此处是存放内核段寄存器的信息，因为forkrets是通过中断处理的方式，让进程进入内核态并跳转到kernel_thread_entry
     tf.tf_cs = KERNEL_CS;
     tf.tf_ds = tf.tf_es = tf.tf_ss = KERNEL_DS;
+    // 此处的fn保证了kernel_thread_entry能够调用init_main函数并执行
     tf.tf_regs.reg_ebx = (uint32_t)fn;
     tf.tf_regs.reg_edx = (uint32_t)arg;
+    // 此处是为了保证在程序被调度启动时，forkrets能够将eip跳转到kernel_thread_entry的位置
     tf.tf_eip = (uint32_t)kernel_thread_entry;
     return do_fork(clone_flags | CLONE_VM, 0, &tf);
 }

@@ -48,6 +48,7 @@ struct proc_struct {
     struct proc_struct *parent;                 // the parent process
     struct mm_struct *mm;                       // Process's memory management field
     struct context context;                     // Switch here to run process
+    // 此程序中trapframe是用来存放内核态程序的寄存器等信息，和context相互独立，ucore是使用类似中断处理的方式来将程序跳转到内核
     struct trapframe *tf;                       // Trap frame for current interrupt
     uintptr_t cr3;                              // CR3 register: the base addr of Page Directroy Table(PDT)
     uint32_t flags;                             // Process flag
