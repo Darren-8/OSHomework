@@ -59,6 +59,7 @@ struct pushregs {
     uint32_t reg_eax;
 };
 
+// 前一个被中断打断的线程的状态
 struct trapframe {
     struct pushregs tf_regs;
     uint16_t tf_gs;

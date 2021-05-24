@@ -418,7 +418,7 @@ proc_init(void) {
     // 设置当前正在运行的进程为第0号进程
     current = idleproc;
 
-    // 创建内核进程
+    // 创建内核线程
     int pid = kernel_thread(init_main, "Hello world!!", 0);
     if (pid <= 0) {
         panic("create init_main failed.\n");
