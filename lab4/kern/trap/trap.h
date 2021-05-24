@@ -62,7 +62,7 @@ struct pushregs {
 struct trapframe {
     struct pushregs tf_regs;
     uint16_t tf_gs;
-    uint16_t tf_padding0;
+    uint16_t tf_padding0; // 对齐
     uint16_t tf_fs;
     uint16_t tf_padding1;
     uint16_t tf_es;
