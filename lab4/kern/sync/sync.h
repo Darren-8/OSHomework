@@ -5,7 +5,7 @@
 #include <intr.h>
 #include <mmu.h>
 
-// 关闭终端，EFLAGS的第9位表示终端是否可用，当为1时，表示中断可用，否则不可用
+// 关闭中断，EFLAGS的第9位表示中断是否可用，当为1时，表示中断可用，否则不可用
 static inline bool
 __intr_save(void) {
     if (read_eflags() & FL_IF) {

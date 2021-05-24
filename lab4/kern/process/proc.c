@@ -137,8 +137,8 @@ get_proc_name(struct proc_struct *proc) {
 }
 
 // get_pid - alloc a unique pid for process
-// 在一开始分配pid的时候，将会从1到MAX_PID每次递增1产生pid返回，其中MAX_PID是不会被分配的，如果pid过多，已经达到了MAX_PID，
-// 则会在进程链表中寻找杀死进程后留下的pid范围空洞，然后再以此产生pid返回
+// 在一开始分配pid的时候，将会在[1,MAX_PID)每次递增1产生pid返回，如果pid过多，已经达到了MAX_PID，
+// 则会在进程链表中寻找杀死进程后留下的pid区间空洞，然后再以此产生pid返回
 static int
 get_pid(void) {
     // 确保每个进程一定能够分配到一个pid，同时保证在寻找pid空洞的时候一定能够找到pid空洞
@@ -160,10 +160,11 @@ get_pid(void) {
         while ((le = list_next(le)) != list) {
             proc = le2proc(le, list_link);
             // 若发现last_pid的pid已经被占用，则将last_pid加1，然后接着查看last_pid是否被占用
+            // 实际上保证是le所指向的进程和last_pid同步自增
             if (proc->pid == last_pid) {
                 // 查看last_pid和next_safe标记的范围是否存在pid空洞，如果存在则继续，查看last_pid是否被占用
                 if (++ last_pid >= next_safe) {
-                    // 如果不存在，则说明标记的pid空洞寻找失败，重置各个变量，然后重新遍历链表进行寻找，
+                    // 如果不存在，则说明从起始last_pid开始的pid空洞寻找失败，重置各个变量，然后重新从1开始遍历
                     if (last_pid >= MAX_PID) {
                         last_pid = 1;
                     }
@@ -295,6 +296,7 @@ copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf) {
  * @clone_flags: used to guide how to clone the child process
  * @stack:       the parent's user stack pointer. if stack==0, It means to fork a kernel thread.
  * @tf:          the trapframe info, which will be copied to child process's proc->tf
+ * 在新地址上fork一个一模一样的孩子内核线程
  */
 int
 do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
