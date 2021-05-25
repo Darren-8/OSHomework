@@ -9,6 +9,9 @@
 #include <swap.h>
 #include <kmalloc.h>
 
+struct kmem_cache_t *vma_cache = NULL; // slub
+struct kmem_cache_t *mm_cache = NULL; // slub
+
 /* 
   vmm design include two parts: mm_struct (mm) & vma_struct (vma)
   mm is the memory manager for the set of continuous virtual memory  
@@ -42,7 +45,8 @@ static void check_pgfault(void);
 // mm_create -  alloc a mm_struct & initialize it.
 struct mm_struct *
 mm_create(void) {
-    struct mm_struct *mm = kmalloc(sizeof(struct mm_struct));
+    // struct mm_struct *mm = kmalloc(sizeof(struct mm_struct));
+    struct mm_struct *mm = kmem_cache_alloc(mm_cache); // slub
 
     if (mm != NULL) {
         list_init(&(mm->mmap_list));
@@ -59,7 +63,8 @@ mm_create(void) {
 // vma_create - alloc a vma_struct & initialize it. (addr range: vm_start~vm_end)
 struct vma_struct *
 vma_create(uintptr_t vm_start, uintptr_t vm_end, uint32_t vm_flags) {
-    struct vma_struct *vma = kmalloc(sizeof(struct vma_struct));
+    // struct vma_struct *vma = kmalloc(sizeof(struct vma_struct));
+    struct vma_struct *vma = kmem_cache_alloc(vma_cache); // slub
 
     if (vma != NULL) {
         vma->vm_start = vm_start;
@@ -146,9 +151,11 @@ mm_destroy(struct mm_struct *mm) {
     list_entry_t *list = &(mm->mmap_list), *le;
     while ((le = list_next(list)) != list) {
         list_del(le);
-        kfree(le2vma(le, list_link));  //kfree vma        
+        // kfree(le2vma(le, list_link));  //kfree vma
+        kmem_cache_free(mm_cache, le2vma(le, list_link)); // slub
     }
-    kfree(mm); //kfree mm
+    // kfree(mm); //kfree mm
+    kmem_cache_free(mm_cache, mm); // slub
     mm=NULL;
 }
 
@@ -156,6 +163,8 @@ mm_destroy(struct mm_struct *mm) {
 //          - now just call check_vmm to check correctness of vmm
 void
 vmm_init(void) {
+    mm_cache = kmem_cache_create("mm", sizeof(struct mm_struct), NULL, NULL); // slub
+    vma_cache = kmem_cache_create("vma", sizeof(struct vma_struct), NULL, NULL); // slub
     check_vmm();
 }
 

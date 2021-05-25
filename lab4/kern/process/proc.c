@@ -77,6 +77,8 @@ struct proc_struct *current = NULL;
 
 static int nr_process = 0;
 
+struct kmem_cache_t *proc_cache = NULL; // slub
+
 void kernel_thread_entry(void);
 void forkrets(struct trapframe *tf);
 void switch_to(struct context *from, struct context *to);
@@ -84,7 +86,8 @@ void switch_to(struct context *from, struct context *to);
 // alloc_proc - alloc a proc_struct and init all fields of proc_struct
 static struct proc_struct *
 alloc_proc(void) {
-    struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
+    // struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
+    struct proc_struct *proc = kmem_cache_alloc(proc_cache); // slub
     if (proc != NULL) {
         proc -> state = PROC_UNINIT;
         proc -> pid = -1;
@@ -139,6 +142,7 @@ get_proc_name(struct proc_struct *proc) {
 // get_pid - alloc a unique pid for process
 // 在一开始分配pid的时候，将会在[1,MAX_PID)每次递增1产生pid返回，如果pid过多，已经达到了MAX_PID，
 // 则会在进程链表中寻找杀死进程后留下的pid区间空洞，然后再以此产生pid返回
+// 调用之前关闭了中断，确保能分配唯一的pid
 static int
 get_pid(void) {
     // 确保每个进程一定能够分配到一个pid，同时保证在寻找pid空洞的时候一定能够找到pid空洞
@@ -246,6 +250,7 @@ kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
     // 此处是存放内核段寄存器的信息，因为forkrets是通过中断处理的方式，让进程进入内核态并跳转到kernel_thread_entry
     tf.tf_cs = KERNEL_CS;
     tf.tf_ds = tf.tf_es = tf.tf_ss = KERNEL_DS;
+    // 见 entry.S
     // 此处的fn保证了kernel_thread_entry能够调用init_main函数并执行
     tf.tf_regs.reg_ebx = (uint32_t)fn;
     tf.tf_regs.reg_edx = (uint32_t)arg;
@@ -316,12 +321,12 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     // 创建进程
     proc = alloc_proc();
     if(!proc) goto fork_out;
-    // 设置父进程，设置pid
+    // 设置父进程，分配pid
     proc -> parent = current;
     proc -> pid = get_pid();
     // 分配一个内核栈
     if(setup_kstack(proc) != 0) goto bad_fork_cleanup_proc;
-    // 复制虚拟内存管理器，因为用不到mm，所以此处实际上不做任何行为
+    // 复制虚拟内存管理器，因为用不到mm，所以本例中此处实际上不做任何行为
     copy_mm(clone_flags, proc);
     // 复制中断帧trapframe和上下文信息context
     copy_thread(proc, stack, tf);
@@ -330,9 +335,9 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     // 加入进程链表
     list_add(&proc_list, &(proc -> list_link));
     nr_process++;
-    // 唤醒进程，标记这个进程可以被调度后运行
+    // 唤醒进程，设置为RUNNABLE状态
     wakeup_proc(proc);
-    // 将ret设置成新创建进程的pid
+    // 将返回值设置成新创建进程的pid
     ret = proc -> pid;
     // 恢复中断状态
     local_intr_restore(state);
@@ -395,6 +400,8 @@ init_main(void *arg) {
 void
 proc_init(void) {
     int i;
+
+    proc_cache = kmem_cache_create("proc", sizeof(struct proc_struct), NULL, NULL); // slub
 
     // 初始化进程链表
     list_init(&proc_list);

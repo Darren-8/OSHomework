@@ -329,7 +329,8 @@ pmm_init(void) {
 
     print_pgdir();
     
-    kmalloc_init();
+    //kmalloc_init();
+    kmem_int(); // slub
 
 }
 
