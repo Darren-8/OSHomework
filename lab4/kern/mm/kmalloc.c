@@ -1,3 +1,5 @@
+#if 0
+
 #include <defs.h>
 #include <list.h>
 #include <memlayout.h>
@@ -301,5 +303,4 @@ unsigned int ksize(const void *block)
 	return ((slob_t *)block - 1)->units * SLOB_UNIT;
 }
 
-
-
+#endif /* 0 */
