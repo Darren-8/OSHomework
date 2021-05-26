@@ -4,12 +4,17 @@
 #include <string.h>
 #include <stdio.h>
 
+// slab分配算法采用cache存储内核对象。当创建cache时，起初包括若干标记为空闲的对象
+// 对象的数量与slab的大小有关。当需要内核数据结构的对象时，可以直接从cache上直接获取，并将对象初始化为使用
+// Slab对应的内存页分为两部分
+// 保存空闲信息的bufcnt以及可用内存区域buf[len(obj)]
+
 struct slab_t {
-    int ref;                       
-    struct kmem_cache_t *cachep;              
-    uint16_t inuse;
-    uint16_t free;
-    list_entry_t slab_link;
+    int ref;                        // 页的引用次数（保留）
+    struct kmem_cache_t *cachep;    // cache对象指针
+    uint16_t inuse;                 // 已经分配对象数目
+    uint16_t free;                  // 下一个空闲对象偏移量
+    list_entry_t slab_link;         // Slab链表
 };
 
 // The number of sized cache : 16, 32, 64, 128, 256, 512, 1024, 2048
@@ -26,7 +31,8 @@ static struct kmem_cache_t *sized_caches[SIZED_CACHE_NUM];
 static char *cache_cache_name = "cache";
 static char *sized_cache_name = "sized";
 
-// kmem_cache_grow - add a free slab
+// 申请一页内存，初始化空闲链表bufctl，构造buf中的对象
+// 更新Slab元数据，最后将新的Slab加入到仓库的空闲Slab表中
 static void *
 kmem_cache_grow(struct kmem_cache_t *cachep) {
     struct Page *page = alloc_page();
@@ -49,7 +55,7 @@ kmem_cache_grow(struct kmem_cache_t *cachep) {
     return slab;
 }
 
-// kmem_slab_destroy - destroy a slab
+// 析构buf中的对象后将内存页归还
 static void
 kmem_slab_destroy(struct kmem_cache_t *cachep, struct slab_t *slab) {
     // Destruct cache
@@ -178,7 +184,8 @@ check_kmem() {
 }
 // ! End of test code
 
-// kmem_cache_create - create a kmem_cache
+// 从kmem_cache_t中获得一个对象，初始化成员，最后将对象加入cache链表
+// 由于空闲表每一项占用2字节，所以每个Slab的对象数目就是：4096字节/(2字节+对象大小)
 struct kmem_cache_t *
 kmem_cache_create(const char *name, size_t size,
                        void (*ctor)(void*, struct kmem_cache_t *, size_t),
@@ -199,7 +206,7 @@ kmem_cache_create(const char *name, size_t size,
     return cachep;
 }
 
-// kmem_cache_destroy - destroy a kmem_cache
+// 释放cache中所有的Slab，释放kmem_cache_t
 void 
 kmem_cache_destroy(struct kmem_cache_t *cachep) {
     list_entry_t *head, *le;
@@ -231,7 +238,8 @@ kmem_cache_destroy(struct kmem_cache_t *cachep) {
     kmem_cache_free(&(cache_cache), cachep);
 }   
 
-// kmem_cache_alloc - allocate an object
+// 先查找slabs_partial，如果没找到空闲区域则查找slabs_free，还是没找到就申请一个新的slab
+// 从slab分配一个对象后，如果slab变满，那么将slab加入slabs_full
 void *
 kmem_cache_alloc(struct kmem_cache_t *cachep) {
     list_entry_t *le = NULL;
@@ -261,7 +269,7 @@ kmem_cache_alloc(struct kmem_cache_t *cachep) {
     return objp;
 }
 
-// kmem_cache_zalloc - allocate an object and fill it with zero
+// 使用kmem_cache_alloc分配一个对象之后将对象内存区域初始化为零
 void *
 kmem_cache_zalloc(struct kmem_cache_t *cachep) {
     void *objp = kmem_cache_alloc(cachep);
@@ -269,7 +277,8 @@ kmem_cache_zalloc(struct kmem_cache_t *cachep) {
     return objp;
 }
 
-// kmem_cache_free - free an object
+// 将对象从Slab中释放，也就是将对象空间加入空闲链表，更新Slab元信息
+// 如果Slab变空，那么将Slab加入slabs_partial链表
 void 
 kmem_cache_free(struct kmem_cache_t *cachep, void *objp) {
     // Get slab of object 
@@ -291,19 +300,19 @@ kmem_cache_free(struct kmem_cache_t *cachep, void *objp) {
         list_add(&(cachep->slabs_partial), &(slab->slab_link));
 }
 
-// kmem_cache_size - get object size
+// 获得仓库中对象的大小
 size_t 
 kmem_cache_size(struct kmem_cache_t *cachep) {
     return cachep->objsize;
 }
 
-// kmem_cache_name - get cache name
+// 获得cache的名称
 const char *
 kmem_cache_name(struct kmem_cache_t *cachep) {
     return cachep->name;
 }
 
-// kmem_cache_shrink - destroy all slabs in free list 
+// 将cache中slabs_free中所有Slab释放
 int 
 kmem_cache_shrink(struct kmem_cache_t *cachep) {
     int count = 0;
@@ -317,7 +326,7 @@ kmem_cache_shrink(struct kmem_cache_t *cachep) {
     return count;
 }
 
-// kmem_cache_reap - reap all free slabs 
+// 遍历cache链表，对每一个cache进行kmem_cache_shrink操作
 int 
 kmem_cache_reap() {
     int count = 0;
@@ -327,12 +336,14 @@ kmem_cache_reap() {
     return count;
 }
 
+// 找到大小最合适的内置cache，申请一个对象
 void *
 kmalloc(size_t size) {
     assert(size <= SIZED_CACHE_MAX);
     return kmem_cache_alloc(sized_caches[kmem_sized_index(size)]);
 }
 
+// 释放内置cache对象
 void 
 kfree(void *objp) {
     void *base = slab2kva(pages);
@@ -344,7 +355,7 @@ kfree(void *objp) {
 void
 kmem_int() {
 
-    // Init cache for kmem_cache
+    // 初始化kmem_cache_t
     cache_cache.objsize = sizeof(struct kmem_cache_t);
     cache_cache.num = PGSIZE / (sizeof(int16_t) + sizeof(struct kmem_cache_t));
     cache_cache.ctor = NULL;
@@ -356,8 +367,8 @@ kmem_int() {
     list_init(&(cache_chain));
     list_add(&(cache_chain), &(cache_cache.cache_link));
 
-    // Init sized cache 
-    for (int i = 0, size = 16; i < SIZED_CACHE_NUM; i++, size *= 2)
+    // 初始化8个固定大小的内置cache
+    for (int i = 0, size = 16; i < SIZED_CACHE_NUM; i++, size <<= 1)
         sized_caches[i] = kmem_cache_create(sized_cache_name, size, NULL, NULL); 
 
     check_kmem();
