@@ -87,6 +87,21 @@ static struct proc_struct *
 alloc_proc(void) {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
     if (proc != NULL) {
+        proc -> state = PROC_UNINIT;
+        proc -> pid = -1;
+        proc -> runs = 0;
+        proc -> kstack = 0;
+        proc -> need_resched = 0;
+        proc -> parent = NULL;
+        proc -> mm = NULL;
+        memset(&(proc -> context), 0, sizeof(struct context));
+        // context 按照switch.S的顺序记录了八个 regular registers
+        // EAX 不在内，因为已经被压入栈中不需要再保存
+        // segment registers 也不在内，因为在整个内核的context中是固定的
+        proc -> tf = NULL;
+        proc -> cr3 = boot_cr3;
+        proc -> flags = 0;
+        memset(proc -> name, 0, PROC_NAME_LEN + 1);
     //LAB4:EXERCISE1 YOUR CODE
     /*
      * below fields in proc_struct need to be initialized
@@ -366,10 +381,37 @@ int
 do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     int ret = -E_NO_FREE_PROC;
     struct proc_struct *proc;
+    // 检查进程是否达到最大数量
     if (nr_process >= MAX_PROCESS) {
         goto fork_out;
     }
     ret = -E_NO_MEM;
+    bool state;
+    // 关闭中断
+    local_intr_save(state);
+    // 创建进程
+    proc = alloc_proc();
+    if(!proc) goto fork_out;
+    // 设置父进程，分配pid
+    proc -> parent = current;
+    proc -> pid = get_pid();
+    // 分配一个内核栈
+    if(setup_kstack(proc) != 0) goto bad_fork_cleanup_proc;
+    // 复制虚拟内存管理器，因为用不到mm，所以本例中此处实际上不做任何行为
+    copy_mm(clone_flags, proc);
+    // 复制中断帧trapframe和上下文信息context
+    copy_thread(proc, stack, tf);
+    // 加入进程hash
+    hash_proc(proc);
+    // 加入进程链表
+    list_add(&proc_list, &(proc -> list_link));
+    nr_process++;
+    // 唤醒进程，设置为RUNNABLE状态
+    wakeup_proc(proc);
+    // 将返回值设置成新创建进程的pid
+    ret = proc -> pid;
+    // 恢复中断状态
+    local_intr_restore(state);
     //LAB4:EXERCISE2 YOUR CODE
     /*
      * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
