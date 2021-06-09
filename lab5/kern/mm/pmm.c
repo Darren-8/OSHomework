@@ -442,11 +442,14 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
     }
 }
 
+// 释放虚拟内存地址start和end之间对应的页表
 void
 unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
+    // 权限检查和合法性检查
     assert(start % PGSIZE == 0 && end % PGSIZE == 0);
     assert(USER_ACCESS(start, end));
 
+    // 释放此虚拟地址范围对应的页表
     do {
         pte_t *ptep = get_pte(pgdir, start, 0);
         if (ptep == NULL) {
@@ -454,6 +457,7 @@ unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
             continue ;
         }
         if (*ptep != 0) {
+            // 删除页表
             page_remove_pte(pgdir, start, ptep);
         }
         start += PGSIZE;
@@ -486,9 +490,10 @@ int
 copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
     assert(start % PGSIZE == 0 && end % PGSIZE == 0);
     assert(USER_ACCESS(start, end));
-    // copy content by page unit.
+    // copy content by page unit. 逐页复制内容
     do {
         //call get_pte to find process A's pte according to the addr start
+        // 找到此段虚拟地址对应的页表
         pte_t *ptep = get_pte(from, start, 0), *nptep;
         if (ptep == NULL) {
             start = ROUNDDOWN(start + PTSIZE, PTSIZE);
@@ -496,6 +501,7 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
         }
         //call get_pte to find process B's pte according to the addr start. If pte is NULL, just alloc a PT
         if (*ptep & PTE_P) {
+            // 在新的页目录中创建此虚拟地址范围对应的页表
             if ((nptep = get_pte(to, start, 1)) == NULL) {
                 return -E_NO_MEM;
             }
@@ -507,6 +513,11 @@ copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool share) {
         assert(page!=NULL);
         assert(npage!=NULL);
         int ret=0;
+
+        // 复制
+        memcpy(page2kva(npage), page2kva(page), PGSIZE);
+        // 插入到
+        ret = page_insert(to, npage, start, perm);
         /* LAB5:EXERCISE2 YOUR CODE
          * replicate content of page to npage, build the map of phy addr of nage with the linear addr start
          *

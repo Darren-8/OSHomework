@@ -70,10 +70,13 @@ list_entry_t proc_list;
 static list_entry_t hash_list[HASH_LIST_SIZE];
 
 // idle proc
+// 第0号进程
 struct proc_struct *idleproc = NULL;
 // init proc
+// 第1号进程
 struct proc_struct *initproc = NULL;
 // current proc
+// 当前运行的进程
 struct proc_struct *current = NULL;
 
 static int nr_process = 0;
@@ -101,7 +104,12 @@ alloc_proc(void) {
         proc -> tf = NULL;
         proc -> cr3 = boot_cr3;
         proc -> flags = 0;
-        memset(proc -> name, 0, PROC_NAME_LEN + 1);
+        memset(proc -> name, 0, PROC_NAME_LEN);
+        proc -> wait_state = 0;
+        proc -> cptr = NULL;
+        proc -> optr = NULL;
+        proc -> yptr = NULL;
+
     //LAB4:EXERCISE1 YOUR CODE
     /*
      * below fields in proc_struct need to be initialized
@@ -156,6 +164,7 @@ set_links(struct proc_struct *proc) {
 }
 
 // remove_links - clean the relation links of process
+// 清除所有关联信息
 static void
 remove_links(struct proc_struct *proc) {
     list_del(&(proc->list_link));
@@ -239,6 +248,7 @@ hash_proc(struct proc_struct *proc) {
 }
 
 // unhash_proc - delete proc from proc hash_list
+// 从进程管理链表中删除这个进程
 static void
 unhash_proc(struct proc_struct *proc) {
     list_del(&(proc->hash_link));
@@ -306,6 +316,7 @@ setup_pgdir(struct mm_struct *mm) {
 }
 
 // put_pgdir - free the memory space of PDT
+// 删除页目录
 static void
 put_pgdir(struct mm_struct *mm) {
     free_page(kva2page(mm->pgdir));
@@ -321,19 +332,23 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc) {
     if (oldmm == NULL) {
         return 0;
     }
+    // 此处可能导致fork后产生的子进程和父进程共享一个mm，也就是进程内存空间的超级浅拷贝
     if (clone_flags & CLONE_VM) {
         mm = oldmm;
         goto good_mm;
     }
 
     int ret = -E_NO_MEM;
+    // mm浅拷贝，只拷贝页目录和页表
     if ((mm = mm_create()) == NULL) {
         goto bad_mm;
     }
+    // 创建页目录
     if (setup_pgdir(mm) != 0) {
         goto bad_pgdir_cleanup_mm;
     }
 
+    // lock_mm会等待mm不被锁时，对mm上锁，其操作具有原子性，保证了原mm不会在复制过程中不会被其他发生改变
     lock_mm(oldmm);
     {
         ret = dup_mmap(mm, oldmm);
@@ -345,6 +360,7 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc) {
     }
 
 good_mm:
+    // 增加引用计数
     mm_count_inc(mm);
     proc->mm = mm;
     proc->cr3 = PADDR(mm->pgdir);
@@ -392,13 +408,16 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     // 创建进程
     proc = alloc_proc();
     if(!proc) goto fork_out;
-    // 设置父进程，分配pid
+    // 设置父进程
     proc -> parent = current;
+    // 保证父进程不在等待子进程的退出
+    assert(current->wait_state == 0);
+    // 获得pid
     proc -> pid = get_pid();
     // 分配一个内核栈
     if(setup_kstack(proc) != 0) goto bad_fork_cleanup_proc;
-    // 复制虚拟内存管理器，因为用不到mm，所以本例中此处实际上不做任何行为
-    copy_mm(clone_flags, proc);
+    // 复制虚拟内存管理器
+    if(copy_mm(clone_flags, proc) != 0) goto bad_fork_cleanup_kstack;
     // 复制中断帧trapframe和上下文信息context
     copy_thread(proc, stack, tf);
     // 加入进程hash
@@ -469,6 +488,7 @@ do_exit(int error_code) {
         panic("initproc exit.\n");
     }
     
+    // 释放mm
     struct mm_struct *mm = current->mm;
     if (mm != NULL) {
         lcr3(boot_cr3);
@@ -479,6 +499,7 @@ do_exit(int error_code) {
         }
         current->mm = NULL;
     }
+    // 将当前进程变成僵尸进程
     current->state = PROC_ZOMBIE;
     current->exit_code = error_code;
     
@@ -487,9 +508,11 @@ do_exit(int error_code) {
     local_intr_save(intr_flag);
     {
         proc = current->parent;
+        // 如果发现父进程正在等待子进程结束，则告诉父进程可以开始运行了
         if (proc->wait_state == WT_CHILD) {
             wakeup_proc(proc);
         }
+        // 将所有当前进程的子进程变成1号进程的子进程
         while (current->cptr != NULL) {
             proc = current->cptr;
             current->cptr = proc->optr;
@@ -501,6 +524,7 @@ do_exit(int error_code) {
             proc->parent = initproc;
             initproc->cptr = proc;
             if (proc->state == PROC_ZOMBIE) {
+                // 如果发现1号进程正在等待子进程结束，则告诉1号进程可以开始运行了
                 if (initproc->wait_state == WT_CHILD) {
                     wakeup_proc(initproc);
                 }
@@ -526,10 +550,12 @@ load_icode(unsigned char *binary, size_t size) {
     int ret = -E_NO_MEM;
     struct mm_struct *mm;
     //(1) create a new mm for current process
+    // 创建新mm
     if ((mm = mm_create()) == NULL) {
         goto bad_mm;
     }
     //(2) create a new PDT, and mm->pgdir= kernel virtual addr of PDT
+    // 为进程创建一个页目录，这个页目录默认设置为boot_pgdir
     if (setup_pgdir(mm) != 0) {
         goto bad_pgdir_cleanup_mm;
     }
@@ -549,6 +575,7 @@ load_icode(unsigned char *binary, size_t size) {
     struct proghdr *ph_end = ph + elf->e_phnum;
     for (; ph < ph_end; ph ++) {
     //(3.4) find every program section headers
+        // 检查参数合法性，及该段是否能够被加载进入内存
         if (ph->p_type != ELF_PT_LOAD) {
             continue ;
         }
@@ -565,6 +592,7 @@ load_icode(unsigned char *binary, size_t size) {
         if (ph->p_flags & ELF_PF_W) vm_flags |= VM_WRITE;
         if (ph->p_flags & ELF_PF_R) vm_flags |= VM_READ;
         if (vm_flags & VM_WRITE) perm |= PTE_W;
+        // 设置一段新的虚拟内存来加载elf中的ph段的内容
         if ((ret = mm_map(mm, ph->p_va, ph->p_memsz, vm_flags, NULL)) != 0) {
             goto bad_cleanup_mmap;
         }
@@ -577,7 +605,9 @@ load_icode(unsigned char *binary, size_t size) {
      //(3.6) alloc memory, and  copy the contents of every program section (from, from+end) to process's memory (la, la+end)
         end = ph->p_va + ph->p_filesz;
      //(3.6.1) copy TEXT/DATA section of bianry program
+        // 将ph段的内容逐页加载进入内存
         while (start < end) {
+            // 分配一页内存用于加载ph段
             if ((page = pgdir_alloc_page(mm->pgdir, la, perm)) == NULL) {
                 goto bad_cleanup_mmap;
             }
@@ -585,12 +615,15 @@ load_icode(unsigned char *binary, size_t size) {
             if (end < la) {
                 size -= la - end;
             }
+            // 加载段内容
             memcpy(page2kva(page) + off, from, size);
             start += size, from += size;
         }
 
-      //(3.6.2) build BSS section of binary program
+      //(3.6.2) build BSS section of binary program，构建BSS，为未初始化的全局变量或者静态变量预留空间，此处BSS段即为ph段加载完后剩余的空间
+        // 寻找ph段末尾位置
         end = ph->p_va + ph->p_memsz;
+        // 如果加载ph段的最后一个内存页还有空余，则将这段内存也作为BSS
         if (start < la) {
             /* ph->p_memsz == ph->p_filesz */
             if (start == end) {
@@ -604,6 +637,7 @@ load_icode(unsigned char *binary, size_t size) {
             start += size;
             assert((end < la && start == end) || (end >= la && start == la));
         }
+        // 创建BSS
         while (start < end) {
             if ((page = pgdir_alloc_page(mm->pgdir, la, perm)) == NULL) {
                 goto bad_cleanup_mmap;
@@ -616,7 +650,7 @@ load_icode(unsigned char *binary, size_t size) {
             start += size;
         }
     }
-    //(4) build user stack memory
+    //(4) build user stack memory 创建用户栈
     vm_flags = VM_READ | VM_WRITE | VM_STACK;
     if ((ret = mm_map(mm, USTACKTOP - USTACKSIZE, USTACKSIZE, vm_flags, NULL)) != 0) {
         goto bad_cleanup_mmap;
@@ -628,13 +662,23 @@ load_icode(unsigned char *binary, size_t size) {
     
     //(5) set current process's mm, sr3, and set CR3 reg = physical addr of Page Directory
     mm_count_inc(mm);
+    // 设置内存管理器
     current->mm = mm;
+    // 设置页目录位置
     current->cr3 = PADDR(mm->pgdir);
     lcr3(PADDR(mm->pgdir));
 
     //(6) setup trapframe for user environment
     struct trapframe *tf = current->tf;
     memset(tf, 0, sizeof(struct trapframe));
+
+    tf -> tf_cs = USER_CS;
+    tf -> tf_ds = USER_DS;
+    tf -> tf_ss = USER_DS;
+    tf -> tf_es = USER_DS;
+    tf -> tf_esp = USTACKTOP;
+    tf -> tf_eip = elf -> e_entry;
+    tf -> tf_eflags = FL_IF;
     /* LAB5:EXERCISE1 YOUR CODE
      * should set tf_cs,tf_ds,tf_es,tf_ss,tf_esp,tf_eip,tf_eflags
      * NOTICE: If we set trapframe correctly, then the user level process can return to USER MODE from kernel. So
@@ -661,10 +705,13 @@ bad_mm:
 //           - call load_icode to setup new memory space accroding binary prog.
 int
 do_execve(const char *name, size_t len, unsigned char *binary, size_t size) {
+    // 设置内存管理器
     struct mm_struct *mm = current->mm;
+    // 检查
     if (!user_mem_check(mm, (uintptr_t)name, len, 0)) {
         return -E_INVAL;
     }
+    // 检查进程名长度
     if (len > PROC_NAME_LEN) {
         len = PROC_NAME_LEN;
     }
@@ -673,8 +720,11 @@ do_execve(const char *name, size_t len, unsigned char *binary, size_t size) {
     memset(local_name, 0, sizeof(local_name));
     memcpy(local_name, name, len);
 
+    // 如果发现mm不为空，则说明此进程可能是某个进程fork后的子进程，此时删除进程的所有信息重新创建，具体可以看do_fork和copy_mm
     if (mm != NULL) {
+        // 设置页目录
         lcr3(boot_cr3);
+        // 减少mm的引用计数
         if (mm_count_dec(mm) == 0) {
             exit_mmap(mm);
             put_pgdir(mm);
@@ -683,9 +733,11 @@ do_execve(const char *name, size_t len, unsigned char *binary, size_t size) {
         current->mm = NULL;
     }
     int ret;
+    // 加载进程的elf可执行文件
     if ((ret = load_icode(binary, size)) != 0) {
         goto execve_exit;
     }
+    // 设置进程名称
     set_proc_name(current, local_name);
     return 0;
 
@@ -704,6 +756,8 @@ do_yield(void) {
 // do_wait - wait one OR any children with PROC_ZOMBIE state, and free memory space of kernel stack
 //         - proc struct of this child.
 // NOTE: only after do_wait function, all resources of the child proces are free.
+// 等待当前进程的某个指定(通过pid指定)子进程退出，并清除该子进程的资源，如果给定的pid为0，则表示，等待当前进程的任意一个子进程退出，并清除该子进程的所有资源
+// 特别的，如果给定的pid对应的进程不存在，可能会导致do_wait进入死循环
 int
 do_wait(int pid, int *code_store) {
     struct mm_struct *mm = current->mm;
@@ -717,28 +771,39 @@ do_wait(int pid, int *code_store) {
     bool intr_flag, haskid;
 repeat:
     haskid = 0;
+    // 如果pid不为0
     if (pid != 0) {
+        // 根据pid找到此进程
         proc = find_proc(pid);
+        // 如果找到了该pid的进程，并且发现发现这个进程是当前进程的子进程
         if (proc != NULL && proc->parent == current) {
             haskid = 1;
+            // 如果发现此pid进程已经退出，则释放该pid进程资源
             if (proc->state == PROC_ZOMBIE) {
                 goto found;
             }
         }
     }
+    // 如果pid为0
     else {
+        // 获得当前正在运行进程的子进程
         proc = current->cptr;
+        // 寻找它的同胞进程
         for (; proc != NULL; proc = proc->optr) {
             haskid = 1;
             if (proc->state == PROC_ZOMBIE) {
+                // 如果有一个进程已经退出
                 goto found;
             }
         }
     }
     if (haskid) {
+        // 如果发现没有一个进程满足要求，则将当前进程设置成等待状态
         current->state = PROC_SLEEPING;
         current->wait_state = WT_CHILD;
+        // 释放CPU资源
         schedule();
+        // 调度回来后，如果发现当前进程正在被要求退出，则立刻进程退出
         if (current->flags & PF_EXITING) {
             do_exit(-E_KILLED);
         }
@@ -747,19 +812,26 @@ repeat:
     return -E_BAD_PROC;
 
 found:
+    // 到此处proc存放的是寻找到的已经退出的一个子进程
+    // 检查是否为第0号进程或者第1号进程
     if (proc == idleproc || proc == initproc) {
         panic("wait idleproc or initproc.\n");
     }
     if (code_store != NULL) {
+        // 保存该已经执行完成的子进程的返回值
         *code_store = proc->exit_code;
     }
     local_intr_save(intr_flag);
     {
+        // 从进程管理链表中删除这个进程
         unhash_proc(proc);
+        // 删除有关这个进程的所有关联信息
         remove_links(proc);
     }
     local_intr_restore(intr_flag);
+    // 释放内核栈的内存
     put_kstack(proc);
+    // 释放进程控制块
     kfree(proc);
     return 0;
 }
@@ -835,6 +907,7 @@ init_main(void *arg) {
         panic("create user_main failed.\n");
     }
 
+    // 等待所有子进程退出
     while (do_wait(0, NULL) == 0) {
         schedule();
     }
@@ -860,6 +933,7 @@ proc_init(void) {
         list_init(hash_list + i);
     }
 
+    // 创建第0号进程
     if ((idleproc = alloc_proc()) == NULL) {
         panic("cannot alloc idleproc.\n");
     }
@@ -873,6 +947,7 @@ proc_init(void) {
 
     current = idleproc;
 
+    // 创建第一个进程，该进程为内核态的进程
     int pid = kernel_thread(init_main, NULL, 0);
     if (pid <= 0) {
         panic("create init_main failed.\n");
