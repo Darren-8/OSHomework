@@ -90,25 +90,39 @@ static struct proc_struct *
 alloc_proc(void) {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
     if (proc != NULL) {
-        proc -> state = PROC_UNINIT;
-        proc -> pid = -1;
-        proc -> runs = 0;
-        proc -> kstack = 0;
-        proc -> need_resched = 0;
-        proc -> parent = NULL;
-        proc -> mm = NULL;
-        memset(&(proc -> context), 0, sizeof(struct context));
-        // context 按照switch.S的顺序记录了八个 regular registers
-        // EAX 不在内，因为已经被压入栈中不需要再保存
-        // segment registers 也不在内，因为在整个内核的context中是固定的
-        proc -> tf = NULL;
-        proc -> cr3 = boot_cr3;
-        proc -> flags = 0;
-        memset(proc -> name, 0, PROC_NAME_LEN);
-        proc -> wait_state = 0;
-        proc -> cptr = NULL;
-        proc -> optr = NULL;
-        proc -> yptr = NULL;
+        // proc -> state = PROC_UNINIT;
+        // proc -> pid = -1;
+        // proc -> runs = 0;
+        // proc -> kstack = 0;
+        // proc -> need_resched = 0;
+        // proc -> parent = NULL;
+        // proc -> mm = NULL;
+        // memset(&(proc -> context), 0, sizeof(struct context));
+        // // context 按照switch.S的顺序记录了八个 regular registers
+        // // EAX 不在内，因为已经被压入栈中不需要再保存
+        // // segment registers 也不在内，因为在整个内核的context中是固定的
+        // proc -> tf = NULL;
+        // proc -> cr3 = boot_cr3;
+        // proc -> flags = 0;
+        // memset(proc -> name, 0, PROC_NAME_LEN);
+        // proc -> wait_state = 0;
+        // proc -> cptr = NULL;
+        // proc -> optr = NULL;
+        // proc -> yptr = NULL;
+        proc->state = PROC_UNINIT;
+        proc->pid = -1;
+        proc->runs = 0;
+        proc->kstack = 0;
+        proc->need_resched = 0;
+        proc->parent = NULL;
+        proc->mm = NULL;
+        memset(&(proc->context), 0, sizeof(struct context));
+        proc->tf = NULL;
+        proc->cr3 = boot_cr3;
+        proc->flags = 0;
+        memset(proc->name, 0, PROC_NAME_LEN);
+        proc->wait_state = 0;
+        proc->cptr = proc->optr = proc->yptr = NULL;
 
     //LAB4:EXERCISE1 YOUR CODE
     /*
@@ -339,7 +353,8 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc) {
     }
 
     int ret = -E_NO_MEM;
-    // mm浅拷贝，只拷贝页目录和页表
+    // 以下为mm浅拷贝，只拷贝页目录和页表
+
     if ((mm = mm_create()) == NULL) {
         goto bad_mm;
     }
@@ -351,6 +366,7 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc) {
     // lock_mm会等待mm不被锁时，对mm上锁，其操作具有原子性，保证了原mm不会在复制过程中不会被其他发生改变
     lock_mm(oldmm);
     {
+        // 拷贝原mm管理的虚拟内存范围对应的页目录和页表
         ret = dup_mmap(mm, oldmm);
     }
     unlock_mm(oldmm);
@@ -402,35 +418,35 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
         goto fork_out;
     }
     ret = -E_NO_MEM;
-    bool state;
-    // 关闭中断
-    local_intr_save(state);
-    // 创建进程
-    proc = alloc_proc();
-    if(!proc) goto fork_out;
-    // 设置父进程
-    proc -> parent = current;
-    // 保证父进程不在等待子进程的退出
+
+    if ((proc = alloc_proc()) == NULL) {
+        goto fork_out;
+    }
+
+    proc->parent = current;
     assert(current->wait_state == 0);
-    // 获得pid
-    proc -> pid = get_pid();
-    // 分配一个内核栈
-    if(setup_kstack(proc) != 0) goto bad_fork_cleanup_proc;
-    // 复制虚拟内存管理器
-    if(copy_mm(clone_flags, proc) != 0) goto bad_fork_cleanup_kstack;
-    // 复制中断帧trapframe和上下文信息context
+
+    if (setup_kstack(proc) != 0) {
+        goto bad_fork_cleanup_proc;
+    }
+    if (copy_mm(clone_flags, proc) != 0) {
+        goto bad_fork_cleanup_kstack;
+    }
     copy_thread(proc, stack, tf);
-    // 加入进程hash
-    hash_proc(proc);
-    // 加入进程链表
-    list_add(&proc_list, &(proc -> list_link));
-    nr_process++;
-    // 唤醒进程，设置为RUNNABLE状态
+
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    {
+        proc->pid = get_pid();
+        hash_proc(proc);
+        set_links(proc);
+
+    }
+    local_intr_restore(intr_flag);
+
     wakeup_proc(proc);
-    // 将返回值设置成新创建进程的pid
-    ret = proc -> pid;
-    // 恢复中断状态
-    local_intr_restore(state);
+
+    ret = proc->pid;
     //LAB4:EXERCISE2 YOUR CODE
     /*
      * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.

@@ -193,7 +193,7 @@ out:
     return ret;
 }
 
-// 复制mm
+// 拷贝原mm管理的虚拟内存范围对应的页目录和页表
 int
 dup_mmap(struct mm_struct *to, struct mm_struct *from) {
     assert(to != NULL && from != NULL);
@@ -207,10 +207,10 @@ dup_mmap(struct mm_struct *to, struct mm_struct *from) {
             return -E_NO_MEM;
         }
 
-        // 向新的mm注册复制得到的新vma
+        // 向新的mm注册新vma
         insert_vma_struct(to, nvma);
 
-        // 复制此vma对应的虚拟内存范围的具体内容
+        // 复制此vma对应的虚拟内存范围对应的页表的具体内容
         bool share = 0;
         if (copy_range(to->pgdir, from->pgdir, vma->vm_start, vma->vm_end, share) != 0) {
             return -E_NO_MEM;
@@ -462,28 +462,47 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
     *   mm->pgdir : the PDT of these vma
     *
     */
-    ptep = get_pte(mm -> pgdir, addr, 1);
-    if(*ptep == 0) {
-        pgdir_alloc_page(mm -> pgdir, addr, perm);
+    // try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.
+    // (notice the 3th parameter '1')
+    if ((ptep = get_pte(mm->pgdir, addr, 1)) == NULL) {
+        cprintf("get_pte in do_pgfault failed\n");
+        goto failed;
     }
-    else {
-        // 检查进行内存交换的设备和程序是否就绪
-        if(swap_init_ok) {
-            struct Page *page = NULL;
-            // 将内存块内容装载进入内存
-            if(swap_in(mm, addr, &page) != 0) goto failed;
-            // 将装载好的内存块插入到页目录中
-            page_insert(mm -> pgdir, page, addr, perm);
-            // 将换入的内存块加入换入队列
-            swap_map_swappable(mm, addr, page, 1);
-            // 设置此内存块首地址对应的虚拟地址
-            page -> pra_vaddr = addr;
-        }
-        else {
-            cprintf("no swap_init_ok but ptep is %x, failed\n",*ptep);
+    
+    if (*ptep == 0) { // if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
+        if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
+            cprintf("pgdir_alloc_page in do_pgfault failed\n");
             goto failed;
         }
     }
+    else {
+        struct Page *page=NULL;
+        cprintf("do pgfault: ptep %x, pte %x\n",ptep, *ptep);
+        if (*ptep & PTE_P) {
+            //if process write to this existed readonly page (PTE_P means existed), then should be here now.
+            //we can implement the delayed memory space copy for fork child process (AKA copy on write, COW).
+            //we didn't implement now, we will do it in future.
+            panic("error write a non-writable pte");
+            //page = pte2page(*ptep);
+        } else{
+           // if this pte is a swap entry, then load data from disk to a page with phy addr
+           // and call page_insert to map the phy addr with logical addr
+           if(swap_init_ok) {               
+               if ((ret = swap_in(mm, addr, &page)) != 0) {
+                   cprintf("swap_in in do_pgfault failed\n");
+                   goto failed;
+               }    
+
+           }  
+           else {
+            cprintf("no swap_init_ok but ptep is %x, failed\n",*ptep);
+            goto failed;
+           }
+       } 
+       page_insert(mm->pgdir, page, addr, perm);
+       swap_map_swappable(mm, addr, page, 1);
+       page->pra_vaddr = addr;
+   }
 #if 0
     /*LAB3 EXERCISE 1: YOUR CODE*/
     ptep = ???              //(1) try to find a pte, if pte's PT(Page Table) isn't existed, then create a PT.

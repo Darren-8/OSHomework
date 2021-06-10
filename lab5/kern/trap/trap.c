@@ -165,7 +165,7 @@ print_pgfault(struct trapframe *tf) {
             (tf->tf_err & 2) ? 'W' : 'R',
             (tf->tf_err & 1) ? "protection fault" : "no page found");
 }
-struct trapframe switchk2u, *switchu2k;
+
 static int
 pgfault_handler(struct trapframe *tf) {
     extern struct mm_struct *check_mm_struct;
@@ -234,8 +234,8 @@ trap_dispatch(struct trapframe *tf) {
          */
         ticks ++;
         if (ticks % TICK_NUM == 0) {
-            print_ticks();
-            if(current != NULL) current -> need_resched = 1;
+            assert(current != NULL);
+            current -> need_resched = 1;
         }
         break;
     case IRQ_OFFSET + IRQ_COM1:
