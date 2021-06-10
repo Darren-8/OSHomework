@@ -61,7 +61,7 @@ idt_init(void) {
     for (i = 0; i < sizeof(idt) / sizeof(struct gatedesc); i ++) {
         SETGATE(idt[i], 0, GD_KTEXT, __vectors[i], DPL_KERNEL);
     }
-	// set for switch from user to kernel
+	// 设置系统调用中断的中断门
     SETGATE(idt[T_SYSCALL], 1, GD_KTEXT, __vectors[T_SYSCALL], DPL_USER);
 	// load the IDT
     lidt(&idt_pd);
@@ -215,6 +215,7 @@ trap_dispatch(struct trapframe *tf) {
         }
         break;
     case T_SYSCALL:
+        // 系统调用中断解析
         syscall();
         break;
     case IRQ_OFFSET + IRQ_TIMER:
@@ -281,14 +282,21 @@ trap(struct trapframe *tf) {
     }
     else {
         // keep a trapframe chain in stack
+        // 保存原本进程的trapframe
         struct trapframe *otf = current->tf;
+        // 载入本次中断得到的中断信息
         current->tf = tf;
     
+        // 检查中断发生后是否进入了内核态
         bool in_kernel = trap_in_kernel(tf);
     
+        // 解析中断信息
         trap_dispatch(tf);
     
+        // 恢复trapframe
         current->tf = otf;
+
+        // 此处没怎么看懂，有待补充
         if (!in_kernel) {
             if (current->flags & PF_EXITING) {
                 do_exit(-E_KILLED);

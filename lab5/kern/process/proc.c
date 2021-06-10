@@ -873,6 +873,7 @@ do_kill(int pid) {
 static int
 kernel_execve(const char *name, unsigned char *binary, size_t size) {
     int ret, len = strlen(name);
+    // 发生系统调用中断时，将参数写入对应寄存器
     asm volatile (
         "int %1;"
         : "=a" (ret)

@@ -30,6 +30,7 @@ __alltraps:
 .globl __trapret
 __trapret:
     # restore registers from stack
+    # 此处将系统调用的返回值放入eax
     popal
 
     # restore %ds, %es, %fs and %gs
