@@ -80,16 +80,20 @@ static int (*syscalls[])(uint32_t arg[]) = {
 
 void
 syscall(void) {
+    // 获得中断信息
     struct trapframe *tf = current->tf;
     uint32_t arg[5];
+    // 获得系统调用类型
     int num = tf->tf_regs.reg_eax;
     if (num >= 0 && num < NUM_SYSCALLS) {
         if (syscalls[num] != NULL) {
+            // 加载系统调用参数
             arg[0] = tf->tf_regs.reg_edx;
             arg[1] = tf->tf_regs.reg_ecx;
             arg[2] = tf->tf_regs.reg_ebx;
             arg[3] = tf->tf_regs.reg_edi;
             arg[4] = tf->tf_regs.reg_esi;
+            // 发起系统调用，将系统调用函数的返回值放入eax
             tf->tf_regs.reg_eax = syscalls[num](arg);
             return ;
         }

@@ -56,6 +56,7 @@ struct proc_struct {
     list_entry_t hash_link;                     // Process hash list
     int exit_code;                              // exit code (be sent to parent proc)
     uint32_t wait_state;                        // waiting state
+    // cptr为子进程，yptr为比他年轻的进程，o为比他老的进程，y和o可以理解为一个串联兄弟进程的双向链表首尾指针
     struct proc_struct *cptr, *yptr, *optr;     // relations between processes
 };
 

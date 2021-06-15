@@ -88,6 +88,7 @@ mm_count_dec(struct mm_struct *mm) {
 static inline void
 lock_mm(struct mm_struct *mm) {
     if (mm != NULL) {
+        // 此操作具有原子性，使用了原子交换的方法
         lock(&(mm->mm_lock));
     }
 }
