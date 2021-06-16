@@ -3,8 +3,9 @@
 #include <proc.h>
 #include <assert.h>
 #include <default_sched.h>
+#include <skew_heap.h>
 
-#define USE_SKEW_HEAP 0
+#define USE_SKEW_HEAP 1
 
 /* You should define the BigStride constant here*/
 /* LAB6: YOUR CODE */
@@ -76,7 +77,11 @@ stride_enqueue(struct run_queue *rq, struct proc_struct *proc) {
      if(proc -> time_slice == 0 || proc -> time_slice > rq -> max_time_slice) {
           proc -> time_slice = rq -> max_time_slice;
      }
+#if USE_SKEW_HEAP
+     rq -> lab6_run_pool = skew_heap_insert(rq -> lab6_run_pool, &(proc -> lab6_run_pool), proc_stride_comp_f);
+#else
      list_add_before(&(rq -> run_list), &(proc -> run_link));
+#endif
      proc -> rq = rq;
      rq -> proc_num++;
 }
@@ -97,9 +102,16 @@ stride_dequeue(struct run_queue *rq, struct proc_struct *proc) {
       *         skew_heap_remove: remove a entry from skew_heap
       *         list_del_init: remove a entry from the  list
       */
+#if USE_SKEW_HEAP
+     // 检查输入是否合法
+     assert(rq -> lab6_run_pool != NULL && rq == proc -> rq);
+     rq -> lab6_run_pool = skew_heap_remove(rq -> lab6_run_pool, &(proc -> lab6_run_pool), proc_stride_comp_f);
+#else
      // 从待调度链表中删除这个进程
      assert(!list_empty(&(proc->run_link)) && proc->rq == rq);
      list_del_init(&(proc -> run_link));
+#endif
+     proc -> rq = NULL;
      rq -> proc_num--;
 }
 /*
@@ -124,6 +136,11 @@ stride_pick_next(struct run_queue *rq) {
       * (2) update p;s stride value: p->lab6_stride
       * (3) return p
       */
+     struct proc_struct *proc = NULL;
+#if USE_SKEW_HEAP
+     if(rq -> lab6_run_pool == NULL) return NULL;
+     proc = le2proc(rq -> lab6_run_pool, lab6_run_pool);
+#else
      // 检查链表是否为空
      if(list_empty(&(rq -> run_list))) return NULL;
      
@@ -139,8 +156,9 @@ stride_pick_next(struct run_queue *rq) {
           }
           le = list_next(le);
      }
+     proc = le2proc(min_le, run_link);
+#endif
      // 将此进程的stride增长
-     struct proc_struct *proc = le2proc(min_le, run_link);
      if(proc -> lab6_priority <= 0) proc -> lab6_priority = 1; // 检查是否有权限设置异常
      proc -> lab6_stride += BIG_STRIDE / proc -> lab6_priority;
      return proc;
