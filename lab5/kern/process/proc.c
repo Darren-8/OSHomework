@@ -668,15 +668,18 @@ load_icode(unsigned char *binary, size_t size) {
     }
     //(4) build user stack memory 创建用户栈
     vm_flags = VM_READ | VM_WRITE | VM_STACK;
+    // 注册用户区域高USTACKSIZE部分作为用户栈
     if ((ret = mm_map(mm, USTACKTOP - USTACKSIZE, USTACKSIZE, vm_flags, NULL)) != 0) {
         goto bad_cleanup_mmap;
     }
+    // 先分配4页物理内存供使用
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-PGSIZE , PTE_USER) != NULL);
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-2*PGSIZE , PTE_USER) != NULL);
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-3*PGSIZE , PTE_USER) != NULL);
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP-4*PGSIZE , PTE_USER) != NULL);
     
     //(5) set current process's mm, sr3, and set CR3 reg = physical addr of Page Directory
+    // 设置新mm的引用计数
     mm_count_inc(mm);
     // 设置内存管理器
     current->mm = mm;
