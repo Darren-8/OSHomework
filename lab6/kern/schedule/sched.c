@@ -89,7 +89,7 @@ schedule(void) {
     local_intr_save(intr_flag);
     {
         current->need_resched = 0;
-        // 如果发现进程时间片用完后，并没有执行完成，则重置时间片并放入待调度队列
+        // 如果发现进程时间片用完后，并没有执行完成，则重新放入待调度队列
         if (current->state == PROC_RUNNABLE) {
             sched_class_enqueue(current);
         }

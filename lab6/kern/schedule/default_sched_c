@@ -47,7 +47,7 @@ RR_pick_next(struct run_queue *rq) {
     return NULL;
 }
 
-// 减少进程时间片
+// 减少进程时间片，此处的rq参数没有作用
 static void
 RR_proc_tick(struct run_queue *rq, struct proc_struct *proc) {
     // 减少时间片
