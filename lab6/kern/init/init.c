@@ -38,6 +38,7 @@ kern_init(void) {
     idt_init();                 // init interrupt descriptor table
 
     vmm_init();                 // init virtual memory management
+    // 调度器初始化
     sched_init();               // init scheduler
     proc_init();                // init process table
     

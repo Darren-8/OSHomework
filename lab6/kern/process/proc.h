@@ -58,8 +58,11 @@ struct proc_struct {
     int exit_code;                              // exit code (be sent to parent proc)
     uint32_t wait_state;                        // waiting state
     struct proc_struct *cptr, *yptr, *optr;     // relations between processes
+    // 所在的待调度队列
     struct run_queue *rq;                       // running queue contains Process
+    // 用于待调度队列的串接
     list_entry_t run_link;                      // the entry linked in run queue
+    // 进程本身剩余的时间片
     int time_slice;                             // time slice for occupying the CPU
     skew_heap_entry_t lab6_run_pool;            // FOR LAB6 ONLY: the entry in the run pool
     uint32_t lab6_stride;                       // FOR LAB6 ONLY: the current stride of the process 

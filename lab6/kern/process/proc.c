@@ -101,6 +101,10 @@ alloc_proc(void) {
         memset(proc->name, 0, PROC_NAME_LEN);
         proc->wait_state = 0;
         proc->cptr = proc->optr = proc->yptr = NULL;
+        proc -> rq = NULL;
+        list_init(&(proc -> run_link));
+        proc -> time_slice = 0;
+        
     //LAB4:EXERCISE1 YOUR CODE
     /*
      * below fields in proc_struct need to be initialized
