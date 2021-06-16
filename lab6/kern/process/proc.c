@@ -102,12 +102,13 @@ alloc_proc(void) {
         memset(proc->name, 0, PROC_NAME_LEN);
         proc->wait_state = 0;
         proc->cptr = proc->optr = proc->yptr = NULL;
+
         proc -> rq = NULL;
         list_init(&(proc -> run_link));
         proc -> time_slice = 0;
         skew_heap_init(&(proc -> lab6_run_pool));
         proc -> lab6_stride = 0;
-        proc -> lab6_priority = 1;
+        proc -> lab6_priority = 0;
 
     //LAB4:EXERCISE1 YOUR CODE
     /*
