@@ -743,7 +743,7 @@ do_execve(const char *name, size_t len, unsigned char *binary, size_t size) {
     if (mm != NULL) {
         // 设置页目录
         lcr3(boot_cr3);
-        // 减少mm的引用计数
+        // 减少mm的引用计数，清空内存管理区
         if (mm_count_dec(mm) == 0) {
             exit_mmap(mm);
             put_pgdir(mm);

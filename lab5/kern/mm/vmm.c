@@ -211,7 +211,7 @@ dup_mmap(struct mm_struct *to, struct mm_struct *from) {
         insert_vma_struct(to, nvma);
 
         // 复制此vma对应的虚拟内存范围对应的页表的具体内容
-        bool share = 0;
+        bool share = 1; // COW
         if (copy_range(to->pgdir, from->pgdir, vma->vm_start, vma->vm_end, share) != 0) {
             return -E_NO_MEM;
         }
@@ -469,13 +469,20 @@ do_pgfault(struct mm_struct *mm, uint32_t error_code, uintptr_t addr) {
         goto failed;
     }
     
-    if (*ptep == 0) { // if the phy addr isn't exist, then alloc a page & map the phy addr with logical addr
+    if (*ptep == 0) { // 如果物理页不存在，分配物理页并建立好相关的映射关系
         if (pgdir_alloc_page(mm->pgdir, addr, perm) == NULL) {
             cprintf("pgdir_alloc_page in do_pgfault failed\n");
             goto failed;
         }
-    }
-    else {
+    } else if (error_code & 3 == 3) { // 是COW导致的错误
+        // 在这里就需要完成物理页的分配，并实现代码和数据的复制
+        // 实际上，我们将之前的copy_range过程放在了这里执行，只有必须执行时才执行该过程
+        struct Page *page = pte2page(*ptep);
+        struct Page *npage = pgdir_alloc_page(mm->pgdir, addr, perm);
+        uintptr_t src_kvaddr = page2kva(page);
+        uintptr_t dst_kvaddr = page2kva(npage);
+        memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+    } else {
         struct Page *page=NULL;
         cprintf("do pgfault: ptep %x, pte %x\n",ptep, *ptep);
         if (*ptep & PTE_P) {
