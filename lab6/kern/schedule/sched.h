@@ -14,6 +14,7 @@ struct run_queue;
 // The introduction of scheduling classes is borrrowed from Linux, and makes the 
 // core scheduler quite extensible. These classes (the scheduler modules) encapsulate 
 // the scheduling policies. 
+// 调度函数指针结构体，可以理解成调度器的一个抽象基类
 struct sched_class {
     // the name of sched_class
     const char *name;
@@ -36,9 +37,13 @@ struct sched_class {
      */
 };
 
+// 待调度队列
 struct run_queue {
+    // 用于串接进程控制块形成待调度队列
     list_entry_t run_list;
+    // 待调度队列的进程总数
     unsigned int proc_num;
+    // 时间片的最大值
     int max_time_slice;
     // For LAB6 ONLY
     skew_heap_entry_t *lab6_run_pool;
