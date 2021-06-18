@@ -442,24 +442,27 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
     }
 }
 
-// 释放虚拟内存地址start和end之间对应的页表
+// 释放虚拟内存地址start和end之间的位置
 void
 unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end) {
     // 权限检查和合法性检查
     assert(start % PGSIZE == 0 && end % PGSIZE == 0);
     assert(USER_ACCESS(start, end));
 
-    // 释放此虚拟地址范围对应的页表
+    // 释放此虚拟地址范围
     do {
+        // 获得此内存块的页表项所在位置
         pte_t *ptep = get_pte(pgdir, start, 0);
         if (ptep == NULL) {
+            // 获得此块的块首位置
             start = ROUNDDOWN(start + PTSIZE, PTSIZE);
             continue ;
         }
         if (*ptep != 0) {
-            // 删除页表
+            // 删除此内存块
             page_remove_pte(pgdir, start, ptep);
         }
+        // 进入下一个块
         start += PGSIZE;
     } while (start != 0 && start < end);
 }

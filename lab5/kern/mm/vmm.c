@@ -219,7 +219,7 @@ dup_mmap(struct mm_struct *to, struct mm_struct *from) {
     return 0;
 }
 
-// 释放所有的页表
+// 释放所有的页表和页表内部对应的内存块
 void
 exit_mmap(struct mm_struct *mm) {
     assert(mm != NULL && mm_count(mm) == 0);
@@ -227,10 +227,12 @@ exit_mmap(struct mm_struct *mm) {
     list_entry_t *list = &(mm->mmap_list), *le = list;
     while ((le = list_next(le)) != list) {
         struct vma_struct *vma = le2vma(le, list_link);
+        // 删除页表对应的内容
         unmap_range(pgdir, vma->vm_start, vma->vm_end);
     }
     while ((le = list_next(le)) != list) {
         struct vma_struct *vma = le2vma(le, list_link);
+        // 删除页表
         exit_range(pgdir, vma->vm_start, vma->vm_end);
     }
 }
