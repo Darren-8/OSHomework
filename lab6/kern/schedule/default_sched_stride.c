@@ -5,6 +5,7 @@
 #include <default_sched.h>
 #include <skew_heap.h>
 
+// 当此处为0时，表示运行链表实现班，当为1时，为堆实现版
 #define USE_SKEW_HEAP 1
 
 /* You should define the BigStride constant here*/
